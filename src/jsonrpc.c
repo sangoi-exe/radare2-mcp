@@ -28,6 +28,16 @@ static void emit_content(PJ *pj, const char *s) {
 	pj_end (pj);
 }
 
+char *jsonrpc_tooltext_error_response(const char *text) {
+	R_RETURN_VAL_IF_FAIL (text, NULL);
+	PJ *pj = pj_new ();
+	pj_o (pj);
+	emit_content (pj, text);
+	pj_kb (pj, "isError", true);
+	pj_end (pj);
+	return pj_drain (pj);
+}
+
 static void emit_structured(PJ *pj, const char *structured_json, const char *text_fallback) {
 	pj_k (pj, "structuredContent");
 	if (structured_json) {

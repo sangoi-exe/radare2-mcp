@@ -389,7 +389,7 @@ run_open_file_regressions() {
 
 	assert_error_contains_param "$(response_by_id "$resp" 2)" "file_path" "open_file:missing-required"
 	assert_error_contains_param "$(response_by_id "$resp" 3)" "file_path" "open_file:wrong-type"
-	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
 		fail "open_file: empty string should fail cleanly"
 	}
 	assert_marker_absent "$(response_by_id "$resp" 5)" "$INJECT_MARKER" "open_file:injection"
@@ -853,6 +853,8 @@ run_sandbox_regressions() {
 	local resp="$TMPDIR/sandbox.resp"
 	mkdir -p "$sb"
 	cp /bin/ls "$sb/ls"
+	mkdir -p "$sb/.hidden"
+	cp /bin/ls "$sb/.hidden/ls"
 	ln -s /bin "$sb/escape"
 	: > "$req"
 
@@ -864,6 +866,12 @@ run_sandbox_regressions() {
 	append_tool_call "$req" 5 list_files "$(jq -cn --arg path "$sb/escape" '{path:$path}')"
 	append_tool_call "$req" 6 open_file "$(jq -cn --arg file "file://$sb/ls" '{file_path:$file}')"
 	append_tool_call "$req" 7 open_file "$(jq -cn --arg file "file:///bin/ls" '{file_path:$file}')"
+	append_tool_call "$req" 8 open_file "$(jq -cn --arg file "$sb/.hidden/ls" '{file_path:$file}')"
+	append_tool_call "$req" 9 open_file "$(jq -cn --arg file "file://$sb/.hidden/ls" '{file_path:$file}')"
+	append_tool_call "$req" 10 open_file '{"file_path":"ls"}'
+	append_tool_call "$req" 11 open_file "$(jq -cn --arg file "$sb/../sandbox/ls" '{file_path:$file}')"
+	append_tool_call "$req" 12 open_file '{"file_path":"/bin/ls"}'
+	append_tool_call "$req" 13 open_file "$(jq -cn --arg file "$sb/missing" '{file_path:$file}')"
 	run_session "$req" "$resp" -s "$sb"
 
 	local open_escape
@@ -877,7 +885,7 @@ run_sandbox_regressions() {
 	open_file_uri=$(response_by_id "$resp" 6)
 	open_file_uri_escape=$(response_by_id "$resp" 7)
 
-	printf '%s\n' "$open_escape" | jq -e '.result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
+	printf '%s\n' "$open_escape" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
 		fail "sandbox open_file symlink escape should fail, got $open_escape"
 	}
 	printf '%s\n' "$traversal" | jq -e '.error.code == -32603 and (.error.message | contains("Path traversal"))' >/dev/null 2>&1 || {
@@ -886,12 +894,35 @@ run_sandbox_regressions() {
 	printf '%s\n' "$list_escape" | jq -e '.error.code == -32603 and (.error.message | contains("outside of the sandbox"))' >/dev/null 2>&1 || {
 		fail "sandbox symlink escape should be rejected, got $list_escape"
 	}
-	printf '%s\n' "$open_file_uri" | jq -e '.result.content[0].text | contains("File opened") or contains("File already opened")' >/dev/null 2>&1 || {
+	printf '%s\n' "$open_file_uri" | jq -e '(.result.isError // false) == false and (.result.content[0].text | contains("File opened") or contains("File already opened"))' >/dev/null 2>&1 || {
 		fail "sandbox file:// inside sandbox should succeed, got $open_file_uri"
 	}
-	printf '%s\n' "$open_file_uri_escape" | jq -e '.result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
+	printf '%s\n' "$open_file_uri_escape" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
 		fail "sandbox file:// escape should fail, got $open_file_uri_escape"
 	}
+	local id
+	for id in 8 9; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '(.result.isError // false) == false and (.result.content[0].text | contains("File opened") or contains("File already opened"))' >/dev/null 2>&1 || {
+			fail "sandbox hidden file should succeed with an explicit root (#$id)"
+		}
+	done
+	for id in 10 11 12 13; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
+			fail "sandbox relative/traversal/outside/missing open should return a tool error (#$id)"
+		}
+	done
+
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$sb/.hidden/ls" '{file_path:$file}')"
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "file://$sb/.hidden/ls" '{file_path:$file}')"
+	run_session "$req" "$resp"
+	for id in 2 3; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
+			fail "hidden file without an explicit root should return a tool error (#$id)"
+		}
+	done
 }
 
 run_startup_command_regression() {

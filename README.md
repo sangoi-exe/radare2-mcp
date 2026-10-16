@@ -150,6 +150,8 @@ The plugin registers eval keys for the same server options exposed by the CLI:
 `r2mcp.session_tools`, `r2mcp.sessions`, `r2mcp.sessions.max`,
 `r2mcp.sessions.timeout`, `r2mcp.decompiler`, and `r2mcp.baseurl`.
 
+Without an explicit sandbox root, local file paths containing hidden components are refused. Set `-s /absolute/task/root` (or `r2mcp.sandbox` in plugin mode) to allow files within that root's canonical boundary, including hidden components. Choose a controlled task directory, not a home-wide exemption. Paths must remain absolute; parent-segment traversal, outside-root paths and symlink escapes are refused. Failed or refused `open_file` calls return a tool result with `isError: true`.
+
 When loading the plugin manually with `-i`, set these keys after the plugin is
 loaded, for example with `-c 'e r2mcp.port=8765'`, because radare2 processes
 early `-e` options before ad hoc plugin initialization.

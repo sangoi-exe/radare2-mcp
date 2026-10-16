@@ -1507,8 +1507,10 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			char *text = r_str_newf ("Closed previously opened file: %s\nFile opened successfully.", previous_file);
 			result = jsonrpc_tooltext_response (text);
 			free (text);
+		} else if (success) {
+			result = jsonrpc_tooltext_response ("File opened successfully.");
 		} else {
-			result = jsonrpc_tooltext_response (success? "File opened successfully.": "Failed to open file.");
+			result = jsonrpc_tooltext_error_response ("Failed to open file.");
 		}
 		free (previous_file);
 		goto cleanup;
