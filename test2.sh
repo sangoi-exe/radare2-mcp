@@ -1453,6 +1453,16 @@ run_native_project_regressions() {
 		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true' >/dev/null || fail "project/input boundary or native identity failure must be visible (#$id)"
 	done
 	printf '%s\n' "$(response_by_id "$resp" 13)" | jq -e '.result.content[0].text | contains("MCP_SAVED_COMMENT") and (contains("MCP_UNSAVED_COMMENT") | not)' >/dev/null || fail "same-server explicit close/open/restore must recover saved comments"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file '{"file_path":"malloc://64"}'
+	append_tool_call "$req" 3 save_project '{"name":"memory.r2prj"}'
+	# No -s: admit this harmless URI so native snapshot eligibility decides the save.
+	run_session "$req" "$resp" -n -N -D "$artifacts"
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -se 'length == 1 and (.[0] | .result != null and (.result.isError // false) == false)' >/dev/null || fail "memory source must open before snapshot eligibility is tested"
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -se 'length == 1 and (.[0] | .result.isError == true and (.result.content[0].text | test("status [1-9][0-9]*")))' >/dev/null || fail "save_project must propagate native snapshot refusal for a non-restorable source"
+	[ ! -e "$artifacts/memory.r2prj" ] || fail "refused native snapshot must not publish an artifact"
 }
 
 need_cmd jq

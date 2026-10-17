@@ -48,7 +48,7 @@ char *r2mcp_project_command(ServerState *ss, const char *name, bool restore) {
 	}
 	free (original);
 	char *argument = r_str_arg_escape (path);
-	char *command = r_str_newf ("'prj %s %s", restore? "restore": "save", argument);
+	char *command = r_str_newf ("'prj %s %s", restore? "restore": "snapshot", argument);
 	free (argument);
 	ProjectCommand operation = { .ss = ss, .command = command, .status = -1 };
 	R_CRITICAL_ENTER (ss->rstate->core);
