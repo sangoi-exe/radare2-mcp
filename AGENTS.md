@@ -6,6 +6,8 @@ MCP server for radare2. Source lives in `src/`. Files named `*.inc.c` are `#incl
 
 This checkout is the independent `r2mcp/` Git root in the [radare2 workspace map](../AGENTS.md), not a submodule or host-owned source directory. Run Git and component build/test commands here. This guide owns MCP source conventions; the host guide's C conventions do not replace them.
 
+For commits, follow [the shared prospective attribution rule](../AGENTS.md#shared-prospective-commit-attribution).
+
 The native server links radare2 RCore and owns MCP stdio transport, tools and RCore lifecycle; no Java or Python analysis backend is required. The host owns binary loading, analysis and project persistence, the [r2ghidra bridge](../r2ghidra/AGENTS.md) owns host-to-decompiler translation, and the [native engine](../r2ghidra/ghidra-native/AGENTS.md) owns Sleigh specifications and decompiler patches. Keep changes at those owners rather than duplicating them in MCP tools.
 
 Use the root `Makefile`, `src/Makefile` and test entry points below as the build/test owners. `src/main.c` owns startup plugin/rc loading and decompiler selection, `src/tools.c` owns tool registration and decompiler dispatch, `src/r2mcp.c` owns RCore creation/destruction and stdio processing, and `src/r2api.inc.c` owns native file loading. Build and launch against matching host libraries, bridge plugins and language files; use the existing startup and registered-decompiler selection paths. A checkout or source inspection does not prove a working runtime, preservation of unsaved analysis across file switches, or saved-project roundtrips; validate those through the actual server and host persistence path.
