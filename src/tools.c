@@ -945,7 +945,15 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	}
 	// pdc retains the dispatcher's address-base behavior for every backend.
 	const char *language = r_json_get_str (tool_args, "language");
-	if (!language) {
+	bool native_backend = false;
+	if (!language && !ss->http_mode && !ss->frida_mode && ss->rstate->core) {
+		RCore *core = ss->rstate->core;
+		R_CRITICAL_ENTER (core);
+		const char *backend = r_config_get (core->config, "cmd.pdc");
+		native_backend = backend && (!strcmp (backend, "pd:g") || !strcmp (backend, "pdg"));
+		R_CRITICAL_LEAVE (core);
+	}
+	if (!language && !native_backend) {
 		return tool_cmd_response_paginated (ss, r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdc", address), tool_args);
 	}
 	char *command = r_str_newf ("'@0x%"PFMT64x"'pdc", address);

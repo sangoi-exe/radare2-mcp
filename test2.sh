@@ -1180,6 +1180,43 @@ run_decompiler_observation_regressions() {
 	printf '%s\n' "$(response_by_id "$resp" 20)" | jq -e '.result.isError == true' >/dev/null || fail "explicit language must not silently apply to an unavailable/non-native backend"
 }
 
+run_native_decompile_status_regressions() {
+	local plugin="${R2MCP_TEST_R2GHIDRA_PLUGIN:-}"
+	local languages="${R2MCP_TEST_R2GHIDRA_LANGUAGES:-}"
+	local original="${R2MCP_TEST_SCRANTIC:-}"
+	if [ -z "$plugin$languages$original" ]; then
+		echo "SKIP native decompile status: set R2MCP_TEST_R2GHIDRA_PLUGIN, R2MCP_TEST_R2GHIDRA_LANGUAGES and R2MCP_TEST_SCRANTIC for the real native witness"
+		return
+	fi
+	[ -f "$plugin" ] && [ -d "$languages" ] && [ -f "$original" ] || fail "native decompile status requires all three explicit component/input paths"
+	local req="$TMPDIR/native-decompile-status.req"
+	local resp="$TMPDIR/native-decompile-status.resp"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$original" '{file_path:$file}')"
+	append_tool_call "$req" 3 decompile_function '{"address":"0x105e2"}'
+	append_tool_call "$req" 4 decompile_function '{"address":"0x105e2","language":"x86:LE:16:Protected Mode"}'
+	append_tool_call "$req" 5 apply_borland_profiles '{}'
+	append_tool_call "$req" 6 decompile_function '{"address":"0x1033a","page_size":4}'
+	append_tool_call "$req" 7 decompile_function '{"address":"0x1033a","language":"x86:LE:16:Protected Mode","page_size":4}'
+	append_tool_call "$req" 8 decompile_function '{"address":"0x1033a","page_size":10000}'
+	append_tool_call "$req" 9 get_decompiler_context '{"address":"0x1033a"}'
+	append_tool_call "$req" 10 close_file '{}'
+	run_session "$req" "$resp" -n -N -C both -s "$(dirname "$original")" -c "L $plugin" -c "e r2ghidra.sleighhome=$languages" -c 'e r2ghidra.timeout=0' -d pd:g
+	local id
+	for id in 3 4; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true and (.result.content[0].text | fromjson | .res == "")' >/dev/null || fail "empty native decompile must be a tool error with or without language (#$id)"
+	done
+	local page
+	page=$(response_by_id "$resp" 6 | jq -c '.result.content[0].text')
+	for id in 6 7; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e --argjson page "$page" '.result | (.isError != true) and .pagination.hasMore == true and .pagination.nextCursor == "4" and .content[0].text == $page and (.content[0].text | contains("qualified_borland_f_scopy"))' >/dev/null || fail "native default/explicit C pagination differs (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 8)" | jq -e --argjson page "$page" '.result | (.isError != true) and (.content[0].text | startswith($page) and contains("FarAddress16")) and ((.pagination.hasMore // false) | not)' >/dev/null || fail "native automatic decompile must retain complete C text"
+	printf '%s\n' "$(response_by_id "$resp" 9)" | jq -e '.result | (.isError != true) and .structuredContent.error == false and (.structuredContent.res | contains("protectedMode"))' >/dev/null || fail "native automatic context is unavailable after decompile failures/successes"
+}
+
 run_borland_profile_regressions() {
 	local catalog="$TMPDIR/borland-profiles.catalog"
 	local req="$TMPDIR/borland-profiles.req"
@@ -1392,6 +1429,7 @@ run_command_filter_regression
 run_script_sandbox_regression
 run_use_decompiler_regression
 run_decompiler_observation_regressions
+run_native_decompile_status_regressions
 run_borland_profile_regressions
 run_native_analysis_read_regressions
 run_native_project_regressions
