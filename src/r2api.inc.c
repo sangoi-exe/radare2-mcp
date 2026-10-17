@@ -152,8 +152,12 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 	if (r_str_startswith (filepath, "file://")) {
 		filepath = filepath + strlen ("file://");
 	}
-	bool is_uri = strstr (filepath, "://") != NULL;
-	// Filesystem security checks only apply to local paths, not URI schemes
+	bool is_uri = !r_file_is_abspath (filepath) && strstr (filepath, "://") != NULL;
+	if (is_uri && R_STR_ISNOTEMPTY (ss->sandbox)) {
+		R_LOG_ERROR ("Unsupported resource URI with an explicit sandbox root. Use an absolute local path or file:// URI");
+		return false;
+	}
+	// Only root-absent URI resources may bypass local path qualification.
 	if (!is_uri) {
 		const char *err = r2mcp_sandbox_check (ss, filepath);
 		if (err) {
@@ -192,8 +196,8 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 		r_config_set (core->config, "asm.cpu", cpu);
 	}
 
-	ss->frida_mode = strstr (filepath, "frida://") != NULL;
-	if (!ss->frida_mode) {
+	const bool frida_mode = strstr (filepath, "frida://") != NULL;
+	if (!frida_mode) {
 		r_core_cmd0 (core, "e bin.relocs.apply=true");
 		r_core_cmd0 (core, "e bin.cache=true");
 	}
@@ -224,6 +228,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 	free (ss->rstate->current_file);
 	ss->rstate->current_file = strdup (filepath);
 	ss->rstate->file_opened = true;
+	ss->rstate->frida_mode = frida_mode;
 	ss->rstate->current_baddr = baddr;
 	ss->rstate->analyze_level = -1;
 	r2state_sandbox_settings (ss, core);

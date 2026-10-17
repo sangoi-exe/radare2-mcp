@@ -193,7 +193,6 @@ static ServerState *r2mcp_state_new_from_config(RCore *core) {
 	ss->content_mode = mode;
 	ss->enabled_tools = r2mcp_cfg_get_list (core, "r2mcp.enabled");
 	ss->disabled_tools = r2mcp_cfg_get_list (core, "r2mcp.disabled");
-	ss->frida_mode = false;
 	ss->default_rstate.current_baddr = UT64_MAX;
 	ss->default_rstate.analyze_level = -1;
 	ss->rstate = &ss->default_rstate;

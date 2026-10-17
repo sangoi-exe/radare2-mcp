@@ -718,6 +718,116 @@ run_list_filter_regressions() {
 	done < "$meta"
 }
 
+run_failed_open_mode_regression() {
+	local variant
+	for variant in normal sessions mini; do
+		local req="$TMPDIR/failed-open-$variant.req"
+		local resp="$TMPDIR/failed-open-$variant.resp"
+		: > "$req"
+		append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+		append_notification "$req" notifications/initialized '{}'
+		# No -s: this must reach native open, not the explicit-root URI refusal.
+		# -n -N leaves the inert URI without an external Frida plugin.
+		append_tool_call "$req" 2 open_file '{"file_path":"frida://"}'
+		append_request "$req" 3 tools/list '{}'
+		if [ "$variant" = sessions ]; then
+			append_tool_call "$req" 4 close_session '{}'
+		fi
+		# Use the existing fixture sources: TMPDIR may be under a hidden path.
+		append_tool_call "$req" 6 open_file '{"file_path":"/bin/ls"}'
+		append_tool_call "$req" 7 show_info '{}'
+		if [ "$variant" != mini ]; then
+			append_tool_call "$req" 8 close_file '{}'
+			append_tool_call "$req" 9 open_file '{"file_path":"/bin/cat"}'
+		fi
+		case "$variant" in
+		normal) run_session "$req" "$resp" -n -N ;;
+		sessions) run_session "$req" "$resp" -n -N -L ;;
+		mini) run_session "$req" "$resp" -n -N -m ;;
+		esac
+		printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.isError == true' >/dev/null || fail "$variant: inert Frida open must fail"
+		printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e 'any(.result.tools[]; .name == "open_file")' >/dev/null || fail "$variant: failed open changed tool mode"
+		printf '%s\n' "$(response_by_id "$resp" 6)" | jq -e '(.result.isError != true) and (.result.content[0].text | contains("File opened successfully"))' >/dev/null || fail "$variant: ordinary open did not recover"
+		printf '%s\n' "$(response_by_id "$resp" 7)" | jq -e 'has("result") and (.result.isError != true)' >/dev/null || fail "$variant: native tools did not recover"
+		if [ "$variant" != mini ]; then
+			printf '%s\n' "$(response_by_id "$resp" 8)" | jq -e '.result.content[0].text | contains("File closed")' >/dev/null || fail "$variant: close_file must remain usable"
+			printf '%s\n' "$(response_by_id "$resp" 9)" | jq -e '.result.content[0].text | contains("File opened successfully")' >/dev/null || fail "$variant: ordinary reopen did not recover"
+		fi
+	done
+}
+
+run_session_mode_isolation_regression() {
+	# Control only local routing metadata; never acquire a real Frida target.
+	cat > "$TMPDIR/session-mode.c" <<'EOF'
+#include "r2mcp.h"
+#include "sessions.h"
+#include "tools.h"
+
+static bool expect_error(ServerState *ss, const char *tool, int code) {
+	char *response = tools_call (ss, tool, NULL);
+	RJson *json = r_json_parse (response);
+	const RJson *error = r_json_get (json, "error");
+	bool ok = error && r_json_get_num (error, "code") == code;
+	r_json_free (json);
+	free (response);
+	return ok;
+}
+
+static bool expect_catalog(ServerState *ss, bool frida) {
+	char *response = tools_build_catalog_json (ss, NULL, R2MCP_MAX_PAGE_SIZE);
+	RJson *json = r_json_parse (response);
+	const RJson *tools = r_json_get (json, "tools");
+	const RJson *tool;
+	bool have_open = false;
+	bool have_frida = false;
+	for (tool = tools? tools->children.first: NULL; tool; tool = tool->next) {
+		const char *name = r_json_get_str (tool, "name");
+		if (name && !strcmp (name, "open_file")) {
+			have_open = true;
+		}
+		if (name && !strcmp (name, "run_frida_script")) {
+			have_frida = true;
+		}
+	}
+	r_json_free (json);
+	free (response);
+	return have_open == !frida && have_frida == frida;
+}
+
+int main(void) {
+	ServerState ss = { .enable_run_command_tool = true };
+	ss.rstate = &ss.default_rstate;
+	R2McpSessions *sessions = r2mcp_sessions_new (2, 0);
+	R2McpSession *a = r2mcp_sessions_acquire (sessions, "a");
+	R2McpSession *b = r2mcp_sessions_acquire (sessions, "b");
+	if (!a || !b || a->rstate.frida_mode || b->rstate.frida_mode) {
+		return 1;
+	}
+	a->rstate.frida_mode = true;
+	a->rstate.file_opened = true;
+	ss.rstate = &a->rstate;
+	bool ok = expect_catalog (&ss, true) && expect_error (&ss, "open_file", -32611) && expect_error (&ss, "run_frida_script", -32602);
+	ss.rstate = &b->rstate;
+	ok = ok && expect_catalog (&ss, false) && expect_error (&ss, "open_file", -32602) && expect_error (&ss, "run_frida_script", -32611);
+	ss.rstate = &r2mcp_sessions_acquire (sessions, "a")->rstate;
+	ok = ok && expect_catalog (&ss, true);
+	r2mcp_rstate_fini (&a->rstate);
+	ok = ok && !a->rstate.frida_mode && !a->rstate.file_opened && !b->rstate.frida_mode;
+	ok = ok && expect_catalog (&ss, false);
+	ss.rstate = &ss.default_rstate;
+	ok = ok && expect_catalog (&ss, false);
+	r2mcp_sessions_free (sessions);
+	RadareState reset = { .frida_mode = true };
+	r2mcp_rstate_fini (&reset);
+	return ok && !reset.frida_mode? 0: 1;
+}
+EOF
+	${CC:-cc} ${CFLAGS:-} -I src $(pkg-config --cflags r_core) "$TMPDIR/session-mode.c" \
+		src/r2mcp.o src/readbuffer.o src/tools.o src/dsltest.o src/prompts.o src/jsonrpc.o src/validation.o src/sessions.o \
+		${LDFLAGS:-} $(pkg-config --libs r_core) -o "$TMPDIR/session-mode"
+	env ASAN_OPTIONS=detect_leaks=0 LSAN_OPTIONS=detect_leaks=0 "$TMPDIR/session-mode" || fail "per-session mode leaked across production tool dispatch"
+}
+
 run_open_session_regression() {
 	local port="19392"
 	local good_url="http://127.0.0.1:$port/cmd/"
@@ -868,12 +978,15 @@ run_sandbox_regressions() {
 
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 14 open_file '{"file_path":"malloc://64"}'
+	append_tool_call "$req" 15 open_file '{"file_path":"file://malloc://64"}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$sb/ls" '{file_path:$file}')"
 	append_tool_call "$req" 20 close_file '{}'
 	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$sb/escape/ls" '{file_path:$file}')"
 	append_tool_call "$req" 21 open_file "$(jq -cn --arg file "$sb/ls" '{file_path:$file}')"
 	append_tool_call "$req" 4 list_files "$(jq -cn --arg path "$sb/../" '{path:$path}')"
 	append_tool_call "$req" 5 list_files "$(jq -cn --arg path "$sb/escape" '{path:$path}')"
+	append_tool_call "$req" 24 close_file '{}'
 	append_tool_call "$req" 6 open_file "$(jq -cn --arg file "file://$sb/ls" '{file_path:$file}')"
 	append_tool_call "$req" 22 close_file '{}'
 	append_tool_call "$req" 7 open_file "$(jq -cn --arg file "file:///bin/ls" '{file_path:$file}')"
@@ -889,14 +1002,19 @@ run_sandbox_regressions() {
 	local open_escape
 	local traversal
 	local list_escape
-	local open_file_uri
 	local open_file_uri_escape
 	open_escape=$(response_by_id "$resp" 3)
 	traversal=$(response_by_id "$resp" 4)
 	list_escape=$(response_by_id "$resp" 5)
-	open_file_uri=$(response_by_id "$resp" 6)
 	open_file_uri_escape=$(response_by_id "$resp" 7)
 
+	local id
+	for id in 14 15; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null || fail "sandbox unqualified resource URI must return a tool error (#$id)"
+	done
+	for id in 2 6 21; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError != true and .result.content[0].text == "File opened successfully."' >/dev/null || fail "sandbox ordinary/file:// native open must succeed (#$id)"
+	done
 	printf '%s\n' "$open_escape" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
 		fail "sandbox open_file symlink escape should fail, got $open_escape"
 	}
@@ -906,13 +1024,9 @@ run_sandbox_regressions() {
 	printf '%s\n' "$list_escape" | jq -e '.error.code == -32603 and (.error.message | contains("outside of the sandbox"))' >/dev/null 2>&1 || {
 		fail "sandbox symlink escape should be rejected, got $list_escape"
 	}
-	printf '%s\n' "$open_file_uri" | jq -e '(.result.isError // false) == false and (.result.content[0].text | contains("File opened") or contains("File already opened"))' >/dev/null 2>&1 || {
-		fail "sandbox file:// inside sandbox should succeed, got $open_file_uri"
-	}
 	printf '%s\n' "$open_file_uri_escape" | jq -e '.result.isError == true and .result.content[0].text == "Failed to open file."' >/dev/null 2>&1 || {
 		fail "sandbox file:// escape should fail, got $open_file_uri_escape"
 	}
-	local id
 	for id in 8 9; do
 		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '(.result.isError // false) == false and (.result.content[0].text | contains("File opened") or contains("File already opened"))' >/dev/null 2>&1 || {
 			fail "sandbox hidden file should succeed with an explicit root (#$id)"
@@ -1417,6 +1531,8 @@ run_tool_argument_regressions
 run_lookup_export_regression
 run_list_filter_regressions
 run_close_file_regression
+run_failed_open_mode_regression
+run_session_mode_isolation_regression
 run_open_session_regression
 run_http_sandbox_grain_regression
 run_http_auth_regression

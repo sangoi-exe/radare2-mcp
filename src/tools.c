@@ -251,7 +251,7 @@ static char *native_command_result(ServerState *ss, RJson *tool_args, char *res,
 #include "analysis.inc.c"
 
 static inline const char *fx(ServerState *ss) {
-	return ss->frida_mode? ":": "";
+	return ss->rstate->frida_mode? ":": "";
 }
 
 static inline ToolMode current_mode(const ServerState *ss) {
@@ -262,7 +262,7 @@ static inline ToolMode current_mode(const ServerState *ss) {
 		if (ss->http_mode) {
 			mode |= TOOL_MODE_HTTP;
 		}
-		if (ss->frida_mode) {
+		if (ss->rstate->frida_mode) {
 			mode |= TOOL_MODE_FRIDA;
 		}
 		if (ss->minimode) {
@@ -485,7 +485,7 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 		}
 		ss->rstate->file_opened = false;
 		ss->rstate->current_baddr = UT64_MAX;
-		ss->frida_mode = false;
+		ss->rstate->frida_mode = false;
 		free (ss->rstate->current_file);
 		ss->rstate->current_file = NULL;
 		ss->rstate->analyze_level = -1;
@@ -510,7 +510,7 @@ static char *tool_restore_project(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
-	if (ss->frida_mode) {
+	if (ss->rstate->frida_mode) {
 		return jsonrpc_tooltext_response ("In Frida mode we won't list functions. List exports or classes instead.");
 	}
 	bool only_named = rjson_get_bool_flag (tool_args, "only_named");
@@ -639,7 +639,7 @@ static char *tool_list_files(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_classes(ServerState *ss, RJson *tool_args) {
-	return list_cmd_response (ss, tool_args, ss->frida_mode? ":ic": "icqq");
+	return list_cmd_response (ss, tool_args, ss->rstate->frida_mode? ":ic": "icqq");
 }
 
 static char *tool_list_methods(ServerState *ss, RJson *tool_args) {
@@ -663,24 +663,24 @@ static char *tool_list_functions_tree(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_imports(ServerState *ss, RJson *tool_args) {
-	return list_cmd_response (ss, tool_args, ss->frida_mode? ":ii": "iiq");
+	return list_cmd_response (ss, tool_args, ss->rstate->frida_mode? ":ii": "iiq");
 }
 
 static char *tool_list_exports(ServerState *ss, RJson *tool_args) {
-	return list_cmd_response (ss, tool_args, ss->frida_mode? ":iE": "iEq");
+	return list_cmd_response (ss, tool_args, ss->rstate->frida_mode? ":iE": "iEq");
 }
 
 static char *tool_list_sections(ServerState *ss, RJson *tool_args) {
-	return list_cmd_response (ss, tool_args, ss->frida_mode? ":iS": "iS;iSS");
+	return list_cmd_response (ss, tool_args, ss->rstate->frida_mode? ":iS": "iS;iSS");
 }
 
 static char *tool_list_memory_maps(ServerState *ss, RJson *tool_args) {
-	return list_cmd_response (ss, tool_args, ss->frida_mode? ":dm": "dm");
+	return list_cmd_response (ss, tool_args, ss->rstate->frida_mode? ":dm": "dm");
 }
 
 static char *tool_show_info(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":i": "i;iH"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->rstate->frida_mode? ":i": "i;iH"));
 }
 
 static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
@@ -689,16 +689,16 @@ static char *tool_get_current_address(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_symbols(ServerState *ss, RJson *tool_args) {
-	return list_cmd_response (ss, tool_args, ss->frida_mode? ":is": "isq~!func.,!imp.");
+	return list_cmd_response (ss, tool_args, ss->rstate->frida_mode? ":is": "isq~!func.,!imp.");
 }
 
 static char *tool_list_entrypoints(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	return tool_cmd_response (r2mcp_cmd (ss, ss->frida_mode? ":ie": "ies"));
+	return tool_cmd_response (r2mcp_cmd (ss, ss->rstate->frida_mode? ":ie": "ies"));
 }
 
 static char *tool_list_libraries(ServerState *ss, RJson *tool_args) {
-	return list_cmd_response (ss, tool_args, ss->frida_mode? ":il": "ilq");
+	return list_cmd_response (ss, tool_args, ss->rstate->frida_mode? ":il": "ilq");
 }
 
 static char *tool_calculate(ServerState *ss, RJson *tool_args) {
@@ -749,7 +749,7 @@ static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_strings(ServerState *ss, RJson *tool_args) {
-	const char *strings_cmd = ss->frida_mode? ":iz": "izqq";
+	const char *strings_cmd = ss->rstate->frida_mode? ":iz": "izqq";
 	return list_cmd_response (ss, tool_args, strings_cmd);
 }
 
@@ -758,7 +758,7 @@ static char *tool_list_all_strings(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_analyze(ServerState *ss, RJson *tool_args) {
-	if (ss->frida_mode) {
+	if (ss->rstate->frida_mode) {
 		return jsonrpc_tooltext_response ("Analysis is not available in frida mode. Use list_functions to see exports or run_command with r2frida commands.");
 	}
 	int level = 0;
@@ -946,7 +946,7 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	// pdc retains the dispatcher's address-base behavior for every backend.
 	const char *language = r_json_get_str (tool_args, "language");
 	bool native_backend = false;
-	if (!language && !ss->http_mode && !ss->frida_mode && ss->rstate->core) {
+	if (!language && !ss->http_mode && !ss->rstate->frida_mode && ss->rstate->core) {
 		RCore *core = ss->rstate->core;
 		R_CRITICAL_ENTER (core);
 		const char *backend = r_config_get (core->config, "cmd.pdc");
@@ -1018,7 +1018,7 @@ static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_threads(ServerState *ss, RJson *tool_args) {
-	const char *cmd = ss->frida_mode? ":dpt": "dpt";
+	const char *cmd = ss->rstate->frida_mode? ":dpt": "dpt";
 	return list_cmd_response (ss, tool_args, cmd);
 }
 
@@ -1056,7 +1056,7 @@ static char *tool_memory_map_here(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_list_heap_allocations(ServerState *ss, RJson *tool_args) {
-	const char *cmd = ss->frida_mode? ":dmh": "dmh";
+	const char *cmd = ss->rstate->frida_mode? ":dmh": "dmh";
 	return list_cmd_response (ss, tool_args, cmd);
 }
 
@@ -1136,7 +1136,7 @@ static char *tool_lookup_export(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "name", &name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
-	if (ss->frida_mode) {
+	if (ss->rstate->frida_mode) {
 		return tool_cmd_response (r2mcp_cmdf (ss, "':iaE %s", name));
 	}
 	char *res = r2mcp_cmd (ss, "'iEj");
@@ -1233,7 +1233,7 @@ static char *tool_run_javascript(ServerState *ss, RJson *tool_args) {
 
 static char *tool_run_frida_script(ServerState *ss, RJson *tool_args) {
 	const char *script;
-	if (!ss->frida_mode) {
+	if (!ss->rstate->frida_mode) {
 		return jsonrpc_error_response (-32603, "Frida mode is not enabled", NULL, NULL);
 	}
 	if (!validate_required_string_param (tool_args, "script", &script)) {
@@ -1364,6 +1364,7 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 		return error_resp;
 	}
 
+	ss->rstate->frida_mode = strstr (test_result, "frida://") != NULL;
 	free (test_result);
 	free (old_baseurl);
 
@@ -1389,7 +1390,7 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 
 	// Clear the HTTP mode and baseurl
 	ss->http_mode = false;
-	ss->frida_mode = false;
+	ss->rstate->frida_mode = false;
 	ss->rstate->file_opened = false;
 	ss->rstate->current_baddr = UT64_MAX;
 	free (ss->rstate->current_file);
@@ -1585,11 +1586,8 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 		char *filteredpath = strdup (filepath);
 		r_str_replace_ch (filteredpath, '`', 0, true);
-		if (r_str_startswith (filteredpath, "file://")) {
-			char *localpath = filteredpath + strlen ("file://");
-			memmove (filteredpath, localpath, strlen (localpath) + 1);
-		}
-		if (ss->rstate->file_opened && ss->rstate->current_file && !strcmp (ss->rstate->current_file, filteredpath) && ss->rstate->current_baddr == baddr) {
+		const char *localpath = r_str_startswith (filteredpath, "file://")? filteredpath + strlen ("file://"): filteredpath;
+		if (ss->rstate->file_opened && ss->rstate->current_file && !strcmp (ss->rstate->current_file, localpath) && ss->rstate->current_baddr == baddr) {
 			int func_count = r2_function_count (ss);
 			int prev_level = ss->rstate->analyze_level;
 			char *text;

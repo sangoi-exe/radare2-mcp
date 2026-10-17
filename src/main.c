@@ -396,7 +396,6 @@ int r2mcp_main(int argc, const char **argv) {
 		.client_capability_keys = NULL,
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
-		.frida_mode = false,
 		.default_rstate = { .current_baddr = UT64_MAX, .analyze_level = -1 }
 	};
 	ss.rstate = &ss.default_rstate;
@@ -438,7 +437,7 @@ int r2mcp_main(int argc, const char **argv) {
 		char *cmd_result = r2mcp_cmd (&ss, "i~file");
 		if (cmd_result && strstr (cmd_result, "frida://")) {
 			r2mcp_log_pub (&ss, "Frida mode detected");
-			ss.frida_mode = true;
+			ss.rstate->frida_mode = true;
 		}
 		free (cmd_result);
 	}

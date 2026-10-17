@@ -77,6 +77,8 @@ typedef struct {
 	RCore *core;
 	bool own_core;
 	bool file_opened;
+	/* Routing mode of the target owned by this core/session. */
+	bool frida_mode;
 	char *current_file;
 	ut64 current_baddr;
 	/* Highest analysis level run on the current file. -1 means not analyzed. */
@@ -122,8 +124,6 @@ typedef struct {
 	bool load_prompts;
 	/* When true, ignore the analysis level specified in analyze calls */
 	bool ignore_analysis_level;
-	/* When true, operate in Frida mode */
-	bool frida_mode;
 	RList *client_capability_keys;
 	/* Active RadareState pointer. Points either to the default state or to a
 	 * per-request session's state (when sessions are enabled in HTTP mode). */

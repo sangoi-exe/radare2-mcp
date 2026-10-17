@@ -194,6 +194,7 @@ bool r2mcp_rstate_init(RadareState *rs) {
 	r2state_settings (core);
 	rs->core = core;
 	rs->own_core = true;
+	rs->frida_mode = false;
 	rs->current_baddr = UT64_MAX;
 	rs->analyze_level = -1;
 	return true;
@@ -211,6 +212,7 @@ void r2mcp_rstate_fini(RadareState *rs) {
 	free (rs->current_file);
 	rs->current_file = NULL;
 	rs->file_opened = false;
+	rs->frida_mode = false;
 	rs->current_baddr = UT64_MAX;
 	rs->analyze_level = -1;
 }
@@ -232,6 +234,7 @@ bool r2mcp_state_use_core(ServerState *ss, RCore *core) {
 	rs->core = core;
 	rs->own_core = false;
 	rs->file_opened = core->io && core->io->desc;
+	rs->frida_mode = rs->file_opened && r_str_startswith (r_str_get (core->io->desc->uri), "frida://");
 	rs->current_baddr = UT64_MAX;
 	rs->analyze_level = -1;
 	if (R_STR_ISNOTEMPTY (ss->sandbox_grain)) {
@@ -292,7 +295,7 @@ static char *r2mcp_cmd_internal(ServerState *ss, const char *cmd, const char *la
 	if (language) {
 		RConfigNode *node = r_config_node_get (core->config, "r2ghidra.lang");
 		const char *backend = r_config_get (core->config, "cmd.pdc");
-		if (!node || !node->value || ss->frida_mode) {
+		if (!node || !node->value || ss->rstate->frida_mode) {
 			res = strdup ("Native r2ghidra language configuration is not registered");
 			goto language_done;
 		}
