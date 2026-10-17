@@ -1180,6 +1180,31 @@ run_decompiler_observation_regressions() {
 	printf '%s\n' "$(response_by_id "$resp" 20)" | jq -e '.result.isError == true' >/dev/null || fail "explicit language must not silently apply to an unavailable/non-native backend"
 }
 
+run_borland_profile_regressions() {
+	local catalog="$TMPDIR/borland-profiles.catalog"
+	local req="$TMPDIR/borland-profiles.req"
+	local resp="$TMPDIR/borland-profiles.resp"
+	fetch_catalog "$catalog" -n -N
+	jq -e 'any(.[]; .name == "apply_borland_profiles" and .inputSchema.type == "object" and (.inputSchema.properties | length) == 0)' "$catalog" >/dev/null || fail "explicit qualified-profile tool/schema is missing"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 apply_borland_profiles '{}'
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 5 apply_borland_profiles '{}'
+	append_tool_call "$req" 6 analyze '{"level":0,"timeout_seconds":1}'
+	append_tool_call "$req" 7 apply_borland_profiles '{}'
+	append_tool_call "$req" 8 analyze '{"level":0,"timeout_seconds":1}'
+	run_session "$req" "$resp" -n -N -C both -s "$TEST_DIR" -c 'e anal.depth=1'
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.error.code == -32611' >/dev/null || fail "qualified profiles require an explicitly opened file"
+	local id
+	for id in 5 7; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError != true and (.result.structuredContent | .error == false and .code == 0 and (.res | contains("function contracts qualified")))' >/dev/null || fail "qualified-profile command/envelope failed (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 6)" | jq -e '.result.content[0].text | contains("Analysis completed with level 0") and (contains("Re-analysis skipped") | not)' >/dev/null || fail "qualified profiles must not mark general analysis as completed"
+	printf '%s\n' "$(response_by_id "$resp" 8)" | jq -e '.result.content[0].text | contains("Re-analysis skipped")' >/dev/null || fail "qualified-profile reapply must not reset the cached general-analysis level"
+}
+
 run_native_analysis_read_regressions() {
 	local catalog="$TMPDIR/native-reads.catalog"
 	local req="$TMPDIR/native-reads.req"
@@ -1367,6 +1392,7 @@ run_command_filter_regression
 run_script_sandbox_regression
 run_use_decompiler_regression
 run_decompiler_observation_regressions
+run_borland_profile_regressions
 run_native_analysis_read_regressions
 run_native_project_regressions
 

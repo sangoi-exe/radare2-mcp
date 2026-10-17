@@ -246,6 +246,8 @@ R_UNUSED static char *tool_mode_response(ServerState *ss, char *text, char *stru
 	return response;
 }
 
+static char *native_command_result(ServerState *ss, RJson *tool_args, char *res, bool envelope);
+
 #include "analysis.inc.c"
 
 static inline const char *fx(ServerState *ss) {
@@ -897,7 +899,7 @@ static char *tool_rename_function(ServerState *ss, RJson *tool_args) {
 	return jsonrpc_tooltext_response ("ok");
 }
 
-static char *decompiler_observation_result(ServerState *ss, RJson *tool_args, char *res, bool envelope) {
+static char *native_command_result(ServerState *ss, RJson *tool_args, char *res, bool envelope) {
 	// Remove only outer JSON whitespace so structuredContent stays on one stdio line.
 	r_str_trim (res);
 	RJson *native = r_json_parsedup (res);
@@ -955,7 +957,7 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	free (command);
 	char *res = r2mcp_cmd_with_language (ss, pj_string (request), language, true);
 	pj_free (request);
-	return decompiler_observation_result (ss, tool_args, res, false);
+	return native_command_result (ss, tool_args, res, false);
 }
 
 static char *decompiler_observation_response(ServerState *ss, RJson *tool_args, const char *suffix, int count) {
@@ -983,7 +985,7 @@ static char *decompiler_observation_response(ServerState *ss, RJson *tool_args, 
 	free (command);
 	char *res = r2mcp_cmd_with_language (ss, pj_string (request), r_json_get_str (tool_args, "language"), false);
 	pj_free (request);
-	return decompiler_observation_result (ss, tool_args, res, true);
+	return native_command_result (ss, tool_args, res, true);
 }
 
 static char *tool_read_instruction_pcode(ServerState *ss, RJson *tool_args) {
@@ -1719,6 +1721,7 @@ ToolSpec tool_specs[] = {
 	{ "list_strings", "Lists strings from data sections with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
 	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },
 	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"Optional maximum analysis time in seconds for this call only. Use 0 to disable the timeout.\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
+	{ "apply_borland_profiles", "Explicitly apply/reapply native qualified Borland executable profiles and helper contracts through a:borland, independently of general analyze. Preserves conflicts and returns native qualification/refusal output and logs; does not claim every fact applied or change the cached general-analysis level.", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_apply_borland_profiles },
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
 	{ "decompile_function", "Show C-like pseudocode through pdc at the required address. Optional language is scoped and requires the selected native r2ghidra backend.", TOOL_SCHEMA_DECOMPILE, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
 	{ "read_instruction_pcode", "Translate instructions with native r2ghidra Sleigh without function analysis. Returns the host JSON2 envelope: res contains assembly and raw p-code, logs retains diagnostics.", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Instruction address as a numeric expression\"},\"num_instructions\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":256,\"description\":\"Instruction count (default: 1, maximum: 256)\"}," TOOL_SCHEMA_LANGUAGE_PROP "},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_read_instruction_pcode },

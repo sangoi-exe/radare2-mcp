@@ -1,5 +1,13 @@
 /* r2mcp - MIT - Copyright 2026 - pancake */
 
+static char *tool_apply_borland_profiles(ServerState *ss, RJson *tool_args) {
+	if (ss->http_mode || ss->frida_mode || !ss->rstate->core) {
+		return jsonrpc_tooltext_error_response ("Qualified Borland profiles require a local native analysis core.");
+	}
+	char *res = r2mcp_cmd (ss, "{\"cmd\":\"a:borland\",\"trim\":false}");
+	return native_command_result (ss, tool_args, res, true);
+}
+
 static char *tool_show_function_details(ServerState *ss, RJson *tool_args) {
 	ut64 address;
 	if (!validate_address_param (ss, tool_args, "address", &address)) {
