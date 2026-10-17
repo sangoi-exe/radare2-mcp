@@ -895,6 +895,70 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 		r2mcp_cmdf (ss, "'@0x%"PFMT64x"'pdc", address), tool_args);
 }
 
+static char *decompiler_observation_response(ServerState *ss, RJson *tool_args, const char *suffix, int count) {
+	ut64 address;
+	if (!validate_address_param (ss, tool_args, "address", &address)) {
+		return jsonrpc_error_numeric_param ("address");
+	}
+	char *available = r2mcp_cmd (ss, "e cmd.pdc=?");
+	const char *decompiler = decompiler_command ("r2ghidra", available);
+	free (available);
+	if (!decompiler) {
+		return jsonrpc_tooltext_error_response ("Native r2ghidra decompiler is not registered; load the matching plugin.");
+	}
+	char *command;
+	if (count > 0) {
+		command = r_str_newf ("'@0x%"PFMT64x"'%s%s %d", address, decompiler, suffix, count);
+	} else {
+		command = r_str_newf ("'@0x%"PFMT64x"'%s%s", address, decompiler, suffix);
+	}
+	PJ *request = pj_new ();
+	pj_o (request);
+	pj_ks (request, "cmd", command);
+	pj_kb (request, "trim", false);
+	pj_end (request);
+	free (command);
+	// Native JSON2 keeps diagnostics separate from the complete, untrimmed output.
+	char *res = r2mcp_cmd (ss, pj_string (request));
+	pj_free (request);
+	// Remove only outer JSON whitespace so structuredContent stays on one stdio line.
+	r_str_trim (res);
+	RJson *native = r_json_parsedup (res);
+	const char *output = native? r_json_get_str (native, "res"): NULL;
+	const RJson *error = native? r_json_get (native, "error"): NULL;
+	bool failed = !output || R_STR_ISEMPTY (r_str_trim_head_ro (output)) || !error || error->type != R_JSON_BOOLEAN || error->num.u_value;
+	const RJson *logs = native? r_json_get (native, "logs"): NULL;
+	if (logs && logs->type == R_JSON_ARRAY) {
+		const RJson *entry;
+		for (entry = logs->children.first; entry; entry = entry->next) {
+			const char *type = r_json_get_str (entry, "type");
+			if (type && (!strcmp (type, "ERROR") || !strcmp (type, "FATAL"))) {
+				failed = true;
+			}
+		}
+	}
+	char *response = failed? jsonrpc_tooltext_error_response (res): jsonrpc_tool_response (res, res, ss->content_mode);
+	r_json_free (native);
+	free (res);
+	return response;
+}
+
+static char *tool_read_instruction_pcode(ServerState *ss, RJson *tool_args) {
+	int count = 1;
+	if (r_json_get (tool_args, "num_instructions") && (!rjson_get_int_param (ss, tool_args, "num_instructions", &count) || count < 1 || count > 256)) {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'num_instructions': expected an integer from 1 to 256", NULL, NULL);
+	}
+	return decompiler_observation_response (ss, tool_args, "sd", count);
+}
+
+static char *tool_export_function_pcode(ServerState *ss, RJson *tool_args) {
+	return decompiler_observation_response (ss, tool_args, "x", 0);
+}
+
+static char *tool_get_decompiler_context(ServerState *ss, RJson *tool_args) {
+	return decompiler_observation_response (ss, tool_args, "d", 0);
+}
+
 static char *tool_get_pid(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
 	return tool_cmd_response (r2mcp_cmdf (ss, "%sdp", fx (ss)));
@@ -1616,6 +1680,9 @@ ToolSpec tool_specs[] = {
 	{ "analyze", "Runs binary analysis with optional depth level", "{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"number\",\"description\":\"Analysis level (0-4, higher is more thorough)\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"Optional maximum analysis time in seconds for this call only. Use 0 to disable the timeout.\"}},\"required\":[]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_analyze },
 	{ "xrefs_to", "Finds all code references to the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_xrefs_to },
 	{ "decompile_function", "Show C-like pseudocode of the function in the given address. <think>Use this to inspect the code in a function, do not run multiple times in the same offset</think>", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to decompile"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_decompile_function },
+	{ "read_instruction_pcode", "Translate instructions with native r2ghidra Sleigh without function analysis. Returns the host JSON2 envelope: res contains assembly and raw p-code, logs retains diagnostics.", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Instruction address as a numeric expression\"},\"num_instructions\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":256,\"description\":\"Instruction count (default: 1, maximum: 256)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_read_instruction_pcode },
+	{ "export_function_pcode", "Export complete native r2ghidra function XML with varnodes, ordered p-code operands and retained operation state. Requires an analyzed function. Returns the unpaginated host JSON2 envelope with XML in res and diagnostics in logs.", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Analyzed function address as a numeric expression\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_export_function_pcode },
+	{ "get_decompiler_context", "Export native r2ghidra architecture debug XML with imported types, prototypes and supplied context/tracked values for an analyzed function. Does not infer unknown selectors or report automatic matching as an effective override. Returns the unpaginated host JSON2 envelope with XML in res and diagnostics in logs.", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Analyzed function address as a numeric expression\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_decompiler_context },
 	{ "list_files", "Lists files in the specified path using radare2's ls -q command. Files ending with / are directories, otherwise they are files.", TOOL_SCHEMA_LIST_WITH_STRING_PARAM ("path", "Path to list files from"), TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_files },
 	{ "disassemble_function", "Shows assembly listing of the function at the specified address", TOOL_SCHEMA_ADDRESS_PAGE ("Address of the function to disassemble"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_disassemble_function },
 	{ "disassemble", "Disassembles a specific number of instructions from an address <think>Use this tool to inspect a portion of memory as code without depending on function analysis boundaries. Use this tool when functions are large and you are only interested on few instructions</think>", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"num_instructions\":{\"type\":\"integer\",\"description\":\"Number of instructions to disassemble (default: 10)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_disassemble },

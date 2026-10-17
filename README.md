@@ -156,6 +156,24 @@ When loading the plugin manually with `-i`, set these keys after the plugin is
 loaded, for example with `-c 'e r2mcp.port=8765'`, because radare2 processes
 early `-e` options before ad hoc plugin initialization.
 
+### Native decompiler observations
+
+With a matching native r2ghidra plugin and language directory loaded, ordinary tools provide three distinct observations without enabling `-r`:
+
+- `read_instruction_pcode`: required `address`, optional `num_instructions` (default 1, range 1–256). Calls raw Sleigh translation without creating or analyzing a function.
+- `export_function_pcode`: required analyzed-function `address`. Exports complete native function XML, including varnodes, ordered p-code operands and retained operation state, rather than an opcode-only summary.
+- `get_decompiler_context`: required analyzed-function `address`. Exports architecture debug XML containing imported types/prototypes and the actual supplied context/tracked values. It does not infer unknown DS/SS from register zeros or substitute automatic language matching for an explicit override.
+
+Each result carries the existing host JSON2 envelope: `res` is the complete, untrimmed native text/XML, while `logs`, `error` and `code` retain native diagnostics/status. XML is returned in full, without pagination or XML conversion; parse the `res` string, not the outer envelope. Structured/both content modes also expose that same envelope as `structuredContent`. Missing plugins, failed native operations and empty native output return `isError: true`. Function/context exports require existing host analysis; the observation tools do not manufacture functions, prototypes or selector values.
+
+Use the default in-process `r2ghidra.timeout=0` for captured observations. The bridge's forked timeout path does not return child output to the parent command capture; an empty captured result is reported as a tool error rather than silently selecting another execution path.
+
+For an isolated stdio launch, load the plugin explicitly after disabling user plugins/rc and select its matching language directory, for example:
+
+```bash
+r2mcp -n -N -s /absolute/task/root -c 'L /matching/libcore_r2ghidra.so' -c 'e r2ghidra.sleighhome=/matching/x86/data/languages' -d pd:g
+```
+
 ### SQL through r2xsql
 
 Install the [r2xsql](https://github.com/radareorg/r2xsql) core plugin for the

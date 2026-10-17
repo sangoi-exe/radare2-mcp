@@ -1117,6 +1117,47 @@ run_use_decompiler_regression() {
 	}
 }
 
+run_decompiler_observation_regressions() {
+	local catalog="$TMPDIR/observations.catalog"
+	local req="$TMPDIR/observations.req"
+	local resp="$TMPDIR/observations.resp"
+	fetch_catalog "$catalog" -n -N
+	jq -e '
+		map(select(.name == "read_instruction_pcode" or .name == "export_function_pcode" or .name == "get_decompiler_context")) as $tools
+		| ($tools | length) == 3
+		and all($tools[]; .inputSchema.required == ["address"] and .inputSchema.properties.address.type == "string")
+		and any($tools[]; .name == "read_instruction_pcode" and .inputSchema.properties.num_instructions.minimum == 1 and .inputSchema.properties.num_instructions.maximum == 256)
+	' "$catalog" >/dev/null || fail "native decompiler observation schemas are incomplete"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	local tool
+	local id=3
+	for tool in read_instruction_pcode export_function_pcode get_decompiler_context; do
+		append_tool_call "$req" "$id" "$tool" '{}'
+		id=$((id + 1))
+		append_tool_call "$req" "$id" "$tool" '{"address":false}'
+		id=$((id + 1))
+		append_tool_call "$req" "$id" "$tool" '{"address":"0"}'
+		id=$((id + 1))
+	done
+	append_tool_call "$req" 12 read_instruction_pcode '{"address":"0","num_instructions":0}'
+	append_tool_call "$req" 13 read_instruction_pcode '{"address":"0","num_instructions":-1}'
+	append_tool_call "$req" 14 read_instruction_pcode '{"address":"0","num_instructions":257}'
+	append_tool_call "$req" 15 read_instruction_pcode '{"address":"0","num_instructions":false}'
+	run_session "$req" "$resp" -n -N -s "$TEST_DIR"
+	for id in 3 4 6 7 9 10; do
+		assert_error_contains_param "$(response_by_id "$resp" "$id")" address "decompiler observation address (#$id)"
+	done
+	for id in 5 8 11; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true and (.result.content[0].text | contains("r2ghidra"))' >/dev/null || fail "missing native decompiler should be a tool error (#$id)"
+	done
+	for id in 12 13 14 15; do
+		assert_error_contains_param "$(response_by_id "$resp" "$id")" num_instructions "raw p-code instruction count (#$id)"
+	done
+}
+
 need_cmd jq
 need_cmd mktemp
 need_cmd curl
@@ -1204,5 +1245,6 @@ run_command_json_pagination_regression
 run_command_filter_regression
 run_script_sandbox_regression
 run_use_decompiler_regression
+run_decompiler_observation_regressions
 
 echo "== OK =="
