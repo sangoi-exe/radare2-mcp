@@ -107,6 +107,8 @@ typedef struct {
 	bool auth_token_generated;
 	/* Optional sandbox path. When set, only allow opening files under this dir */
 	char *sandbox;
+	/* Canonical artifact directory selected explicitly with -D. */
+	char *project_dir;
 	/* Optional radare2 sandbox grain mask; NULL selects a mode-aware default */
 	char *sandbox_grain;
 	/* Optional path to append debug logs when set via -l */
@@ -166,6 +168,8 @@ char *r2mcp_cmd_file(ServerState *ss, const char *file);
 char *r2mcp_cmdf(ServerState *ss, const char *fmt, ...);
 void r2mcp_log_pub(ServerState *ss, const char *msg);
 const char *r2mcp_effective_sandbox_grain(const ServerState *ss);
+char *r2mcp_project_directory(const char *directory);
+char *r2mcp_project_command(ServerState *ss, const char *name, bool restore);
 
 // Additional public wrappers exposed so other modules (eg. tools.c) can use
 // functionality implemented in r2api.inc.c. These simply forward to the

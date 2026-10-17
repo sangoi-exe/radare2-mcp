@@ -51,6 +51,7 @@ void r2mcp_help(void) {
 #endif
 		" -c [cmd]   run those commands before entering the mcp loop\n"
 		" -d [pdc]   select a different decompiler (pdc by default)\n"
+		" -D [dir]   existing directory for native project artifacts (separate from -s)\n"
 		" -E [tool]  exclude the specified tool (repeatable)\n"
 		" -e [tool]  enable only the specified tool (repeatable)\n"
 		" -g [grain] sandbox grain mask (disk,files,exec,socket,network,environ,all,none)\n"
@@ -122,6 +123,7 @@ int r2mcp_main(int argc, const char **argv) {
 	bool auth_token_generated = false;
 	char *http_server_port = NULL;
 	char *sandbox = NULL;
+	char *project_dir = NULL;
 	char *sandbox_grain = NULL;
 	char *logfile = NULL;
 	char *prompts_dir = NULL;
@@ -136,7 +138,7 @@ int r2mcp_main(int argc, const char **argv) {
 	const char *dsl_tests = NULL;
 	RList *disabled_tools = NULL;
 	RGetopt opt;
-	r_getopt_init (&opt, argc, argv, "AC:a:E:H:hmvtpd:nc:u:g:l:s:rite:RT:S:P:NLX:");
+	r_getopt_init (&opt, argc, argv, "AC:a:D:E:H:hmvtpd:nc:u:g:l:s:rite:RT:S:P:NLX:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -183,7 +185,16 @@ int r2mcp_main(int argc, const char **argv) {
 			break;
 		case 'v':
 			r2mcp_version ();
+			free (project_dir);
 			return 0;
+		case 'D':
+			free (project_dir);
+			project_dir = r2mcp_project_directory (opt.arg);
+			if (!project_dir) {
+				R_LOG_ERROR ("-D requires an existing project artifact directory");
+				return 1;
+			}
+			break;
 		case 'd':
 			deco = opt.arg;
 			break;
@@ -291,6 +302,7 @@ int r2mcp_main(int argc, const char **argv) {
 		} else {
 			r2mcp_help ();
 		}
+		free (project_dir);
 		return 0;
 	}
 
@@ -374,6 +386,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.auth_token = auth_token,
 		.auth_token_generated = auth_token_generated,
 		.sandbox = sandbox,
+		.project_dir = project_dir,
 		.sandbox_grain = sandbox_grain,
 		.logfile = logfile,
 		.prompts_dir = prompts_dir,
@@ -394,6 +407,7 @@ int r2mcp_main(int argc, const char **argv) {
 	free (sandbox_grain_msg);
 	if (list_tools) {
 		tools_print_table (&ss);
+		free (ss.project_dir);
 		return 0;
 	}
 	if (ss.load_prompts) {
@@ -449,6 +463,7 @@ int r2mcp_main(int argc, const char **argv) {
 		free (ss.svc_baseurl);
 		free (ss.auth_token);
 		free (ss.sandbox);
+		free (ss.project_dir);
 		free (ss.sandbox_grain);
 		free (ss.logfile);
 		free (ss.prompts_dir);
@@ -505,6 +520,7 @@ int r2mcp_main(int argc, const char **argv) {
 	free (ss.svc_baseurl);
 	free (ss.auth_token);
 	free (ss.sandbox);
+	free (ss.project_dir);
 	free (ss.sandbox_grain);
 	free (ss.logfile);
 	free (ss.prompts_dir);

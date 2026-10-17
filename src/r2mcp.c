@@ -21,6 +21,7 @@
 #include "utils.inc.c"
 #include "bind.inc.c"
 #include "r2api.inc.c"
+#include "project.inc.c"
 
 static volatile sig_atomic_t running = 1;
 /* fd of the active listening socket, or -1. Used by r2mcp_break to wake

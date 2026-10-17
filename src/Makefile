@@ -30,6 +30,7 @@ BIN_SRC = main.c $(COMMON_SRC)
 PLUGIN_SRC = plugin.c $(COMMON_SRC)
 INC = utils.inc.c
 INC += r2api.inc.c
+INC += project.inc.c
 INC += path.inc.c
 INC += curl.inc.c
 BIN_OBJS := $(BIN_SRC:.c=.o)

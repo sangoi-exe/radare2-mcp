@@ -338,6 +338,7 @@ run_close_file_regression() {
 	after_close=$(response_by_id "$resp" 4)
 	[ -n "$close_response" ] || fail "close_file: missing close response"
 	[ -n "$after_close" ] || fail "close_file: missing post-close response"
+	printf '%s\n' "$close_response" | jq -e '.result.content[0].text | contains("Unsaved in-memory analysis was discarded")' >/dev/null || fail "close_file must describe its explicit discard semantics"
 	printf '%s\n' "$after_close" | jq -e '.error.code == -32611' >/dev/null 2>&1 || {
 		fail "close_file: expected open_file requirement after close, got $after_close"
 	}
@@ -426,14 +427,16 @@ run_different_open_file_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE2" '{file_path:$file}')"
 	append_tool_call "$req" 4 get_current_address '{}'
+	append_tool_call "$req" 5 show_info '{}'
 	run_session "$req" "$resp"
 
-	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | contains("Closed previously opened file:") and contains("File opened successfully.")' >/dev/null 2>&1 || {
-		fail "open_file: opening a different file should close the previous file and succeed"
+	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.isError == true and (.result.content[0].text | contains("close_file explicitly"))' >/dev/null 2>&1 || {
+		fail "open_file: opening a different file must require explicit close/discard"
 	}
 	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | contains("0x")' >/dev/null 2>&1 || {
 		fail "open_file: tool call after opening a different file should still work"
 	}
+	printf '%s\n' "$(response_by_id "$resp" 5)" | jq -e --arg file "$TEST_FILE" '.result.content[0].text | contains($file)' >/dev/null || fail "refused replacement must retain the current target"
 }
 
 run_open_file_baddr_regression() {
@@ -445,23 +448,28 @@ run_open_file_baddr_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:"0x400000"}')"
 	append_tool_call "$req" 3 calculate '{"expression":"entry0 - 0x400000"}'
 	append_tool_call "$req" 4 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:"0x500000"}')"
-	append_tool_call "$req" 5 calculate '{"expression":"entry0 - 0x500000"}'
+	append_tool_call "$req" 5 calculate '{"expression":"entry0 - 0x400000"}'
 	append_tool_call "$req" 6 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:0}')"
+	append_tool_call "$req" 7 close_file '{}'
+	append_tool_call "$req" 8 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:"0x500000"}')"
+	append_tool_call "$req" 9 calculate '{"expression":"entry0 - 0x500000"}'
 	run_session "$req" "$resp"
 
 	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.content[0].text == "File opened successfully."' >/dev/null 2>&1 || {
 		fail "open_file baddr: first open should succeed"
 	}
-	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | contains("Closed previously opened file:") and contains("File opened successfully.")' >/dev/null 2>&1 || {
-		fail "open_file baddr: changing base should reopen the same file"
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.isError == true and (.result.content[0].text | contains("close_file explicitly"))' >/dev/null 2>&1 || {
+		fail "open_file baddr: changing base must require explicit close"
 	}
 	local offset1
 	local offset2
 	offset1=$(printf '%s\n' "$(response_by_id "$resp" 3)" | jq -r '.result.content[0].text')
 	offset2=$(printf '%s\n' "$(response_by_id "$resp" 5)" | jq -r '.result.content[0].text')
 	[ "$offset1" = "$offset2" ] || {
-		fail "open_file baddr: rebased entry offset changed ($offset1 vs $offset2)"
+		fail "open_file baddr: refused replacement changed the current base ($offset1 vs $offset2)"
 	}
+	printf '%s\n' "$(response_by_id "$resp" 8)" | jq -e '.result.content[0].text == "File opened successfully."' >/dev/null || fail "open_file baddr: explicit close should admit the new base"
+	[ "$offset1" = "$(printf '%s\n' "$(response_by_id "$resp" 9)" | jq -r '.result.content[0].text')" ] || fail "open_file baddr: rebased entry offset changed"
 	case "$offset1" in
 	0x*) ;;
 	*) fail "open_file baddr: expected hex entry offset, got $offset1" ;;
@@ -861,13 +869,17 @@ run_sandbox_regressions() {
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_notification "$req" notifications/initialized '{}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$sb/ls" '{file_path:$file}')"
+	append_tool_call "$req" 20 close_file '{}'
 	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$sb/escape/ls" '{file_path:$file}')"
+	append_tool_call "$req" 21 open_file "$(jq -cn --arg file "$sb/ls" '{file_path:$file}')"
 	append_tool_call "$req" 4 list_files "$(jq -cn --arg path "$sb/../" '{path:$path}')"
 	append_tool_call "$req" 5 list_files "$(jq -cn --arg path "$sb/escape" '{path:$path}')"
 	append_tool_call "$req" 6 open_file "$(jq -cn --arg file "file://$sb/ls" '{file_path:$file}')"
+	append_tool_call "$req" 22 close_file '{}'
 	append_tool_call "$req" 7 open_file "$(jq -cn --arg file "file:///bin/ls" '{file_path:$file}')"
 	append_tool_call "$req" 8 open_file "$(jq -cn --arg file "$sb/.hidden/ls" '{file_path:$file}')"
 	append_tool_call "$req" 9 open_file "$(jq -cn --arg file "file://$sb/.hidden/ls" '{file_path:$file}')"
+	append_tool_call "$req" 23 close_file '{}'
 	append_tool_call "$req" 10 open_file '{"file_path":"ls"}'
 	append_tool_call "$req" 11 open_file "$(jq -cn --arg file "$sb/../sandbox/ls" '{file_path:$file}')"
 	append_tool_call "$req" 12 open_file '{"file_path":"/bin/ls"}'
@@ -1158,6 +1170,54 @@ run_decompiler_observation_regressions() {
 	done
 }
 
+run_native_project_regressions() {
+	local artifacts="$TMPDIR/project artifacts"
+	local name="manual 'quoted';literal.r2prj"
+	local req="$TMPDIR/native-project.req"
+	local resp="$TMPDIR/native-project.resp"
+	mkdir -p "$artifacts"
+	ln -s "$TEST_FILE" "$artifacts/escape.r2prj"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 3 save_project '{"name":"without-directory.r2prj"}'
+	append_tool_call "$req" 4 restore_project '{"name":"without-directory.r2prj"}'
+	run_session "$req" "$resp" -n -N -s "$TEST_DIR"
+	local id
+	for id in 3 4; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true and (.result.content[0].text | contains("-D"))' >/dev/null || fail "project operations require explicit -D (#$id)"
+	done
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 restore_project "$(jq -cn --arg name "$name" '{name:$name}')"
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 4 set_comment '{"address":"entry0","message":"MCP_SAVED_COMMENT"}'
+	append_tool_call "$req" 5 save_project "$(jq -cn --arg name "$name" '{name:$name}')"
+	append_tool_call "$req" 6 set_comment '{"address":"entry0","message":"MCP_UNSAVED_COMMENT"}'
+	append_tool_call "$req" 7 save_project '{"name":"../escape.r2prj"}'
+	append_tool_call "$req" 8 restore_project '{"name":"escape.r2prj"}'
+	append_tool_call "$req" 9 close_file '{}'
+	append_tool_call "$req" 10 open_file "$(jq -cn --arg file "$artifacts/$name" '{file_path:$file}')"
+	append_tool_call "$req" 11 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 12 restore_project "$(jq -cn --arg name "$name" '{name:$name}')"
+	append_tool_call "$req" 13 disassemble '{"address":"entry0","num_instructions":1}'
+	append_tool_call "$req" 14 close_file '{}'
+	append_tool_call "$req" 15 open_file "$(jq -cn --arg file "$TEST_FILE2" '{file_path:$file}')"
+	append_tool_call "$req" 16 restore_project "$(jq -cn --arg name "$name" '{name:$name}')"
+	run_session "$req" "$resp" -n -N -s "$TEST_DIR" -D "$artifacts"
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.error.code == -32611' >/dev/null || fail "restore must require explicit original loading"
+	for id in 5 12; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '(.result.isError // false) == false and (.result.content[0].text | contains("status 0"))' >/dev/null || fail "native project save/restore should succeed (#$id)"
+	done
+	[ -f "$artifacts/$name" ] || fail "project name must be passed as one literal native argument"
+	for id in 7 8 10 16; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true' >/dev/null || fail "project/input boundary or native identity failure must be visible (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 13)" | jq -e '.result.content[0].text | contains("MCP_SAVED_COMMENT") and (contains("MCP_UNSAVED_COMMENT") | not)' >/dev/null || fail "same-server explicit close/open/restore must recover saved comments"
+}
+
 need_cmd jq
 need_cmd mktemp
 need_cmd curl
@@ -1246,5 +1306,6 @@ run_command_filter_regression
 run_script_sandbox_regression
 run_use_decompiler_regression
 run_decompiler_observation_regressions
+run_native_project_regressions
 
 echo "== OK =="

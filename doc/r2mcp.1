@@ -27,6 +27,15 @@ Require HTTP Bearer authentication using
 .B -A
 Generate and require a random HTTP Bearer authentication token.
 .TP
+.BI "-D " directory
+Use this existing canonical directory for native project artifacts. It is independent of the binary-input restriction selected by
+.BR -s .
+Project operations fail when this option is unset. The
+.B save_project
+and
+.B restore_project
+tools accept a single project filename under this directory; they do not open saved paths or replay project commands/configuration.
+.TP
 .BI "-S " url
 Send tool calls to the supervisor control service at
 .IR url .
@@ -36,6 +45,13 @@ Show command help.
 .TP
 .B -v
 Show the version.
+.SH FILE LIFECYCLE
+Opening another file or changing the current base requires an explicit
+.B close_file
+first; otherwise the request is refused without replacing current analysis.
+Save needed state with
+.B save_project
+before closing. Explicit close discards unsaved in-memory analysis; there is no autosave on close or exit. Restore requires the matching read-only original to be opened normally first and uses the host's native identity/cache validation.
 .SH EXAMPLES
 .TP
 Start a local-only server:

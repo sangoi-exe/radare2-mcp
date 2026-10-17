@@ -486,7 +486,23 @@ static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 		ss->rstate->current_file = NULL;
 		ss->rstate->analyze_level = -1;
 	}
-	return jsonrpc_tooltext_response ("File closed successfully.");
+	return jsonrpc_tooltext_response ("File closed. Unsaved in-memory analysis was discarded.");
+}
+
+static char *tool_save_project(ServerState *ss, RJson *tool_args) {
+	const char *name;
+	if (!validate_required_string_param (tool_args, "name", &name)) {
+		return jsonrpc_error_missing_param ("name");
+	}
+	return r2mcp_project_command (ss, name, false);
+}
+
+static char *tool_restore_project(ServerState *ss, RJson *tool_args) {
+	const char *name;
+	if (!validate_required_string_param (tool_args, "name", &name)) {
+		return jsonrpc_error_missing_param ("name");
+	}
+	return r2mcp_project_command (ss, name, true);
 }
 
 static char *tool_list_functions(ServerState *ss, RJson *tool_args) {
@@ -1554,29 +1570,18 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 			goto cleanup;
 		}
 
-		bool is_uri = strstr (filteredpath, "://") != NULL;
-		bool had_file_opened = ss->rstate->file_opened;
-		char *previous_file = (had_file_opened && ss->rstate->current_file)? strdup (ss->rstate->current_file): NULL;
-		if (had_file_opened && !is_uri && r2mcp_sandbox_check (ss, filteredpath)) {
-			had_file_opened = false;
-			R_FREE (previous_file);
-		}
-		if (had_file_opened) {
-			char *close_res = tool_close_file (ss, &nil);
-			free (close_res);
+		if (ss->rstate->file_opened) {
+			free (filteredpath);
+			result = jsonrpc_tooltext_error_response ("A file is already open. Save the current analysis if needed, then call close_file explicitly before opening another file or changing its base.");
+			goto cleanup;
 		}
 		bool success = r2_open_file (ss, filteredpath, baddr, arch, bits, cpu);
 		free (filteredpath);
-		if (success && previous_file) {
-			char *text = r_str_newf ("Closed previously opened file: %s\nFile opened successfully.", previous_file);
-			result = jsonrpc_tooltext_response (text);
-			free (text);
-		} else if (success) {
+		if (success) {
 			result = jsonrpc_tooltext_response ("File opened successfully.");
 		} else {
 			result = jsonrpc_tooltext_error_response ("Failed to open file.");
 		}
-		free (previous_file);
 		goto cleanup;
 	}
 
@@ -1653,7 +1658,9 @@ ToolSpec tool_specs[] = {
 	{ "list_sessions", "Lists available r2agent sessions in JSON format", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_list_sessions },
 	{ "open_session", "Connects to a remote r2 instance using r2pipe API", "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL of the remote r2 instance to connect to\"}},\"required\":[\"url\"]}", TOOL_MODE_SESSIONS, tool_open_session },
 	{ "close_session", "Close the currently open remote session", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_SESSIONS, tool_close_session },
-	{ "close_file", "Close the currently open file", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
+	{ "close_file", "Explicitly close the current file and discard unsaved in-memory analysis; save_project first if needed", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL, tool_close_file },
+	{ "save_project", "Save native analysis and effective cache edits under the configured -D artifact directory; the original remains read-only", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Single project filename under -D\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL, tool_save_project },
+	{ "restore_project", "Restore native analysis and effective cache edits onto the matching original already opened normally; does not open saved paths, replay commands or switch files", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Single project filename under -D\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL, tool_restore_project },
 	{ "list_functions", "Lists all functions discovered during analysis", "{\"type\":\"object\",\"properties\":{\"only_named\":{\"type\":\"boolean\",\"description\":\"If true, only list functions with named symbols (excludes functions with numeric suffixes like sym.func.1000016c8)\"},\"filter\":{\"type\":\"string\",\"description\":\"Regular expression to filter the results\"},\"count\":{\"type\":\"boolean\",\"description\":\"If true, return only the number of matching results instead of the full list\"},\"start\":{\"type\":\"integer\",\"description\":\"Starting index for pagination (default: 0)\"},\"max_length\":{\"type\":\"integer\",\"description\":\"Maximum number of results to return, -1 for all (default: 50)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions },
 	{ "list_functions_tree", "Lists functions and successors (aflmu)", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO, tool_list_functions_tree },
 	{ "list_libraries", "Lists all shared libraries linked to the binary", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_libraries },

@@ -156,6 +156,18 @@ When loading the plugin manually with `-i`, set these keys after the plugin is
 loaded, for example with `-c 'e r2mcp.port=8765'`, because radare2 processes
 early `-e` options before ad hoc plugin initialization.
 
+### Native projects and explicit file lifecycle
+
+Use `-D /absolute/project-artifacts` to select an existing project artifact directory. It is canonicalized at startup and is independent of the binary-input `-s` boundary; it does not admit those artifacts as binary inputs or grant access outside `-s`. Project operations fail visibly when `-D` is unset. Existing `-p` (permissive tools) and `-P` (prompt directories) retain their meanings.
+
+```bash
+r2mcp -n -N -s /absolute/task/inputs -D /absolute/task/projects
+```
+
+The ordinary `save_project` and `restore_project` tools accept a required `name`, a single literal filename under `-D`. They use the host's native project format and command status, including successful operations with no output; project/cache bytes remain opaque to MCP. Restore requires the matching original to be explicitly opened normally first, with matching loader/base/layout and relocation settings. It restores analysis and effective cache edits onto that read-only original without opening saved paths, replaying commands/configuration or switching files. Older project artifacts without the required native identity/cache state are not migrated or loaded through a fallback.
+
+Opening a different file or changing the current base is refused while a file remains open; the current target and analysis are retained. Opening the same file at the same base remains a no-op. Save any state you need, then call `close_file` explicitly before another `open_file`. `close_file` deliberately discards unsaved in-memory analysis. No autosave occurs on close or process exit. A save → explicit close → normal open of the same original → restore workflow uses the host persistence owner, not a separate MCP analysis store.
+
 ### Native decompiler observations
 
 With a matching native r2ghidra plugin and language directory loaded, ordinary tools provide three distinct observations without enabling `-r`:
