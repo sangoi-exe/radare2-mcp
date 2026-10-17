@@ -254,8 +254,11 @@ void r2mcp_state_fini(ServerState *ss) {
 	ss->client_capability_keys = NULL;
 }
 
-char *r2mcp_cmd(ServerState *ss, const char *cmd) {
+static char *r2mcp_cmd_internal(ServerState *ss, const char *cmd, const char *language, bool require_selected_native) {
 	if (ss && ss->http_mode) {
+		if (language) {
+			return strdup ("Per-call language requires the local native r2ghidra core");
+		}
 		char *res = r2cmd_over_http (ss, cmd);
 		if (!res) {
 			return strdup ("HTTP request failed");
@@ -282,13 +285,45 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 		json_command = command && command->type == R_JSON_STRING;
 		r_json_free (request);
 	}
+	char *previous_language = NULL;
+	char *res = NULL;
+	char *err = NULL;
 	R_CRITICAL_ENTER (core);
+	if (language) {
+		RConfigNode *node = r_config_node_get (core->config, "r2ghidra.lang");
+		const char *backend = r_config_get (core->config, "cmd.pdc");
+		if (!node || !node->value || ss->frida_mode) {
+			res = strdup ("Native r2ghidra language configuration is not registered");
+			goto language_done;
+		}
+		if (require_selected_native && (!backend || (strcmp (backend, "pd:g") && strcmp (backend, "pdg")))) {
+			res = strdup ("Explicit language requires the selected native r2ghidra decompiler");
+			goto language_done;
+		}
+		if (R_STR_ISEMPTY (language)) {
+			res = strdup ("Expected a non-empty native Sleigh language ID");
+			goto language_done;
+		}
+		previous_language = strdup (node->value);
+		if (!previous_language || !r_config_set (core->config, "r2ghidra.lang", language)) {
+			res = strdup ("Cannot set the native language for this operation");
+			goto language_done;
+		}
+	}
 	r2mcp_log_reset (ss);
 	const bool previous_json_command_logs = ss->json_command_logs;
 	ss->json_command_logs = json_command;
-	char *res = r_core_cmd_str (core, filteredCommand);
+	res = r_core_cmd_str (core, filteredCommand);
 	ss->json_command_logs = previous_json_command_logs;
-	char *err = r2mcp_log_drain (ss);
+	err = r2mcp_log_drain (ss);
+language_done:
+	if (previous_language) {
+		if (!r_config_set (core->config, "r2ghidra.lang", previous_language)) {
+			free (res);
+			res = strdup ("Cannot restore the previous native language configuration");
+		}
+		free (previous_language);
+	}
 	R_CRITICAL_LEAVE (core);
 	free (filteredCommand);
 	if (!res) {
@@ -302,6 +337,14 @@ char *r2mcp_cmd(ServerState *ss, const char *cmd) {
 		res = newres;
 	}
 	return res;
+}
+
+char *r2mcp_cmd(ServerState *ss, const char *cmd) {
+	return r2mcp_cmd_internal (ss, cmd, NULL, false);
+}
+
+char *r2mcp_cmd_with_language(ServerState *ss, const char *cmd, const char *language, bool require_selected_native) {
+	return r2mcp_cmd_internal (ss, cmd, language, require_selected_native);
 }
 
 char *r2mcp_cmd_file(ServerState *ss, const char *file) {

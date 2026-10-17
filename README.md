@@ -170,11 +170,15 @@ Opening a different file or changing the current base is refused while a file re
 
 ### Native decompiler observations
 
+Native analysis reads are explicit and target-qualified. `show_function_details` requires `address` and returns `{address, functions}`, with `functions` taken from canonical targeted `afij`; it no longer uses the current seek implicitly. `get_binary_metadata` requires an exact `key` and returns its native `{key, value}` strings from the current binary plugin's Sdb. There is no database dump, integer guessing or fallback database. Missing keys/providers are errors. `get_comment` requires `address` and returns `{address, comment}`, where `null` means no native comment. `get_data_type` requires a native base-type `name` and reports its actual kind, API-provided `size_bits`, definition string when present, members with native offsets/bit sizes/array counts, or enum names/values. A zero native size/count remains zero; these reads do not parse C, infer layouts or create missing definitions.
+
 With a matching native r2ghidra plugin and language directory loaded, ordinary tools provide three distinct observations without enabling `-r`:
 
 - `read_instruction_pcode`: required `address`, optional `num_instructions` (default 1, range 1–256). Calls raw Sleigh translation without creating or analyzing a function.
 - `export_function_pcode`: required analyzed-function `address`. Exports complete native function XML, including varnodes, ordered p-code operands and retained operation state, rather than an opcode-only summary.
 - `get_decompiler_context`: required analyzed-function `address`. Exports architecture debug XML containing imported types/prototypes and the actual supplied context/tracked values. It does not infer unknown DS/SS from register zeros or substitute automatic language matching for an explicit override.
+
+`decompile_function` and all three native observation tools accept optional `language`, a non-empty native Sleigh language ID. The previous `r2ghidra.lang` value is owned and restored after success or error, with set → command → restore inside one current-core critical section. Omission retains the prior setting/native automatic selection. Unknown IDs fail through the native decompiler rather than falling back. Generic decompilation still executes `pdc` and returns paginated C text; an explicit language is accepted only when the selected backend is native r2ghidra. A per-call language does not create static views, change persistent mode state or prepare analysis implicitly.
 
 Each result carries the existing host JSON2 envelope: `res` is the complete, untrimmed native text/XML, while `logs`, `error` and `code` retain native diagnostics/status. XML is returned in full, without pagination or XML conversion; parse the `res` string, not the outer envelope. Structured/both content modes also expose that same envelope as `structuredContent`. Missing plugins, failed native operations and empty native output return `isError: true`. Function/context exports require existing host analysis; the observation tools do not manufacture functions, prototypes or selector values.
 

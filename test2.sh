@@ -1138,6 +1138,7 @@ run_decompiler_observation_regressions() {
 		map(select(.name == "read_instruction_pcode" or .name == "export_function_pcode" or .name == "get_decompiler_context")) as $tools
 		| ($tools | length) == 3
 		and all($tools[]; .inputSchema.required == ["address"] and .inputSchema.properties.address.type == "string")
+		and all($tools[]; .inputSchema.properties.language.type == "string")
 		and any($tools[]; .name == "read_instruction_pcode" and .inputSchema.properties.num_instructions.minimum == 1 and .inputSchema.properties.num_instructions.maximum == 256)
 	' "$catalog" >/dev/null || fail "native decompiler observation schemas are incomplete"
 	: > "$req"
@@ -1158,6 +1159,11 @@ run_decompiler_observation_regressions() {
 	append_tool_call "$req" 13 read_instruction_pcode '{"address":"0","num_instructions":-1}'
 	append_tool_call "$req" 14 read_instruction_pcode '{"address":"0","num_instructions":257}'
 	append_tool_call "$req" 15 read_instruction_pcode '{"address":"0","num_instructions":false}'
+	append_tool_call "$req" 16 decompile_function '{"address":"0","language":false}'
+	append_tool_call "$req" 17 read_instruction_pcode '{"address":"0","language":false}'
+	append_tool_call "$req" 18 export_function_pcode '{"address":"0","language":false}'
+	append_tool_call "$req" 19 get_decompiler_context '{"address":"0","language":false}'
+	append_tool_call "$req" 20 decompile_function '{"address":"0","language":"x86:LE:16:Protected Mode"}'
 	run_session "$req" "$resp" -n -N -s "$TEST_DIR"
 	for id in 3 4 6 7 9 10; do
 		assert_error_contains_param "$(response_by_id "$resp" "$id")" address "decompiler observation address (#$id)"
@@ -1168,6 +1174,61 @@ run_decompiler_observation_regressions() {
 	for id in 12 13 14 15; do
 		assert_error_contains_param "$(response_by_id "$resp" "$id")" num_instructions "raw p-code instruction count (#$id)"
 	done
+	for id in 16 17 18 19; do
+		assert_error_contains_param "$(response_by_id "$resp" "$id")" language "native language type (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 20)" | jq -e '.result.isError == true' >/dev/null || fail "explicit language must not silently apply to an unavailable/non-native backend"
+}
+
+run_native_analysis_read_regressions() {
+	local catalog="$TMPDIR/native-reads.catalog"
+	local req="$TMPDIR/native-reads.req"
+	local resp="$TMPDIR/native-reads.resp"
+	fetch_catalog "$catalog" -n -N
+	jq -e '
+		map(select(.name == "show_function_details" or .name == "get_comment")) as $addressed
+		| ($addressed | length) == 2 and all($addressed[]; .inputSchema.required == ["address"])
+		and any(.[]; .name == "get_binary_metadata" and .inputSchema.required == ["key"])
+		and any(.[]; .name == "get_data_type" and .inputSchema.required == ["name"])
+	' "$catalog" >/dev/null || fail "targeted native read schemas are incomplete"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	# Seed test-only native definitions after normal binary type initialization.
+	append_tool_call "$req" 21 run_command '{"command":"\"td struct MCPReadRecord { uint16_t values[3]; uint8_t tag; };\""}'
+	append_tool_call "$req" 22 run_command '{"command":"\"td enum MCPReadEnum { ZERO=0, HIGH=7 };\""}'
+	append_tool_call "$req" 3 show_function_details '{}'
+	append_tool_call "$req" 4 get_comment '{}'
+	append_tool_call "$req" 5 get_binary_metadata '{}'
+	append_tool_call "$req" 6 get_data_type '{}'
+	append_tool_call "$req" 7 get_comment '{"address":"0x7fff0000"}'
+	append_tool_call "$req" 8 set_comment '{"address":"entry0","message":"MCP_NATIVE_COMMENT"}'
+	append_tool_call "$req" 9 get_comment '{"address":"entry0"}'
+	append_tool_call "$req" 10 get_binary_metadata '{"key":"r2mcp.missing.exact.key"}'
+	append_tool_call "$req" 11 get_data_type '{"name":"r2mcp_missing_native_type"}'
+	append_tool_call "$req" 12 get_data_type '{"name":"uint16_t[3]"}'
+	append_tool_call "$req" 13 get_data_type '{"name":"uint16_t"}'
+	append_tool_call "$req" 14 get_data_type '{"name":"MCPReadRecord"}'
+	append_tool_call "$req" 15 get_data_type '{"name":"MCPReadEnum"}'
+	append_tool_call "$req" 16 analyze '{"level":0,"timeout_seconds":1}'
+	append_tool_call "$req" 17 show_function_details '{"address":"entry0"}'
+	append_tool_call "$req" 18 show_function_details '{"address":"0x7fff0000"}'
+	run_session "$req" "$resp" -n -N -r -C both -s "$TEST_DIR" -c 'e anal.depth=1'
+	assert_error_contains_param "$(response_by_id "$resp" 3)" address "targeted function address"
+	assert_error_contains_param "$(response_by_id "$resp" 4)" address "comment address"
+	assert_error_contains_param "$(response_by_id "$resp" 5)" key "exact metadata key"
+	assert_error_contains_param "$(response_by_id "$resp" 6)" name "native type name"
+	printf '%s\n' "$(response_by_id "$resp" 7)" | jq -e '.result.structuredContent.comment == null' >/dev/null || fail "absent native comment must be null"
+	printf '%s\n' "$(response_by_id "$resp" 9)" | jq -e '.result.structuredContent.comment | contains("MCP_NATIVE_COMMENT")' >/dev/null || fail "native comment content was not returned"
+	local id
+	for id in 10 11 12 18; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true' >/dev/null || fail "missing native data must fail visibly (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 13)" | jq -e '.result.structuredContent | .name == "uint16_t" and .kind == "atomic" and .size_bits == 16' >/dev/null || fail "native atomic definition differs"
+	printf '%s\n' "$(response_by_id "$resp" 14)" | jq -e '.result.structuredContent | .kind == "struct" and .members[0].name == "values" and .members[0].type == "uint16_t" and .members[0].count == 3' >/dev/null || fail "native member/count definition differs"
+	printf '%s\n' "$(response_by_id "$resp" 15)" | jq -e '.result.structuredContent | .kind == "enum" and (.cases | map({key:.name,value:.value}) | from_entries) == {ZERO:0,HIGH:7}' >/dev/null || fail "native enum definition differs"
+	printf '%s\n' "$(response_by_id "$resp" 17)" | jq -e '.result.structuredContent | (.functions | length) > 0 and .functions[0].addr == .address' >/dev/null || fail "targeted afij details were not returned"
 }
 
 run_native_project_regressions() {
@@ -1306,6 +1367,7 @@ run_command_filter_regression
 run_script_sandbox_regression
 run_use_decompiler_regression
 run_decompiler_observation_regressions
+run_native_analysis_read_regressions
 run_native_project_regressions
 
 echo "== OK =="

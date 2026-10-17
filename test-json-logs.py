@@ -37,7 +37,7 @@ class JsonCommandLogTests(unittest.TestCase):
                               for request in requests)
             binary = Path(os.environ.get("R2MCP_TEST_BINARY", str(Path(__file__).parent / "src/r2mcp")))
             result = subprocess.run(
-                [str(binary), "-n", "-N", "-r", "-C", mode], input=payload,
+                [str(binary), "-n", "-N", "-r", "-C", mode, "-s", directory], input=payload,
                 capture_output=True, text=True, timeout=30,
                 env={**os.environ, "R2_COLOR": "0", "R2_UTF8": "0"})
             self.assertEqual(result.returncode, 0, result.stderr)
