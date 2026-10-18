@@ -124,7 +124,6 @@ static void r2mcp_state_free(ServerState *ss) {
 		ss->sessions = NULL;
 	}
 	r2mcp_state_fini (ss);
-	free (ss->baseurl);
 	free (ss->svc_baseurl);
 	free (ss->auth_token);
 	free (ss->sandbox);
@@ -164,8 +163,9 @@ static ServerState *r2mcp_state_new_from_config(RCore *core) {
 	ss->enable_run_command_tool = yolo || r_config_get_b (core->config, "r2mcp.run");
 	ss->log_enabled = r_config_get_b (core->config, "r2mcp.log");
 	ss->use_sessions = r_config_get_b (core->config, "r2mcp.session_tools");
-	ss->baseurl = r2mcp_cfg_get_dup (core, "r2mcp.baseurl");
-	ss->http_mode = R_STR_ISNOTEMPTY (ss->baseurl);
+	ss->rstate = &ss->default_rstate;
+	ss->rstate->baseurl = r2mcp_cfg_get_dup (core, "r2mcp.baseurl");
+	ss->rstate->http_mode = R_STR_ISNOTEMPTY (ss->rstate->baseurl);
 	ss->svc_baseurl = yolo? NULL: r2mcp_cfg_get_svc_url (core);
 	ss->auth_token = r2mcp_cfg_get_dup (core, "r2mcp.auth");
 	if (ss->auth_token && !strcmp (ss->auth_token, "random")) {
@@ -195,8 +195,7 @@ static ServerState *r2mcp_state_new_from_config(RCore *core) {
 	ss->disabled_tools = r2mcp_cfg_get_list (core, "r2mcp.disabled");
 	ss->default_rstate.current_baddr = UT64_MAX;
 	ss->default_rstate.analyze_level = -1;
-	ss->rstate = &ss->default_rstate;
-	if (!ss->http_mode) {
+	if (!ss->rstate->http_mode) {
 		r2mcp_state_use_core (ss, core);
 	} else {
 		ss->rstate->current_baddr = UT64_MAX;

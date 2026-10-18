@@ -77,6 +77,9 @@ typedef struct {
 	RCore *core;
 	bool own_core;
 	bool file_opened;
+	/* Remote r2pipe routing belongs to the selected target. */
+	bool http_mode;
+	char *baseurl;
 	/* Routing mode of the target owned by this core/session. */
 	bool frida_mode;
 	char *current_file;
@@ -98,10 +101,6 @@ typedef struct {
 	bool use_sessions;
 	/* When true operate in read-only mode: only expose non-mutating tools */
 	bool readonly_mode;
-	/* When true, operate in HTTP r2pipe client mode and do NOT use r2 C APIs */
-	bool http_mode;
-	/* Base URL of the remote r2 webserver (if http_mode is true) */
-	char *baseurl;
 	/* Base URL of the supervisor control service (if set) */
 	char *svc_baseurl;
 	/* Optional HTTP bearer token required by the HTTP MCP server */

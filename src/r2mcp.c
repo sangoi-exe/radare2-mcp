@@ -82,7 +82,7 @@ const char *r2mcp_effective_sandbox_grain(const ServerState *ss) {
 	if (ss && R_STR_ISNOTEMPTY (ss->sandbox_grain)) {
 		return ss->sandbox_grain;
 	}
-	return (ss && ss->http_mode)? "exec,network": "exec,socket";
+	return (ss && ss->rstate && ss->rstate->http_mode)? "exec,network": "exec,socket";
 }
 
 static bool r2mcp_http_bearer_authorized(const ServerState *ss, RSocketHTTPRequest *rs) {
@@ -212,6 +212,8 @@ void r2mcp_rstate_fini(RadareState *rs) {
 	free (rs->current_file);
 	rs->current_file = NULL;
 	rs->file_opened = false;
+	R_FREE (rs->baseurl);
+	rs->http_mode = false;
 	rs->frida_mode = false;
 	rs->current_baddr = UT64_MAX;
 	rs->analyze_level = -1;
@@ -258,7 +260,7 @@ void r2mcp_state_fini(ServerState *ss) {
 }
 
 static char *r2mcp_cmd_internal(ServerState *ss, const char *cmd, const char *language, bool require_selected_native) {
-	if (ss && ss->http_mode) {
+	if (ss && ss->rstate->http_mode) {
 		if (language) {
 			return strdup ("Per-call language requires the local native r2ghidra core");
 		}

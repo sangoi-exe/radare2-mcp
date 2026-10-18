@@ -804,6 +804,8 @@ int main(void) {
 		return 1;
 	}
 	a->rstate.frida_mode = true;
+	a->rstate.http_mode = true;
+	a->rstate.baseurl = strdup ("http://127.0.0.1:1/cmd/");
 	a->rstate.file_opened = true;
 	ss.rstate = &a->rstate;
 	bool ok = expect_catalog (&ss, true) && expect_error (&ss, "open_file", -32611) && expect_error (&ss, "run_frida_script", -32602);
@@ -812,14 +814,20 @@ int main(void) {
 	ss.rstate = &r2mcp_sessions_acquire (sessions, "a")->rstate;
 	ok = ok && expect_catalog (&ss, true);
 	r2mcp_rstate_fini (&a->rstate);
-	ok = ok && !a->rstate.frida_mode && !a->rstate.file_opened && !b->rstate.frida_mode;
+	ok = ok && !a->rstate.frida_mode && !a->rstate.http_mode && !a->rstate.baseurl && !a->rstate.file_opened && !b->rstate.frida_mode;
 	ok = ok && expect_catalog (&ss, false);
 	ss.rstate = &ss.default_rstate;
 	ok = ok && expect_catalog (&ss, false);
+	b->rstate.http_mode = true;
+	b->rstate.baseurl = strdup ("http://127.0.0.1:2/cmd/");
+	r2mcp_sessions_acquire (sessions, "a");
+	r2mcp_sessions_acquire (sessions, "c");
+	b = r2mcp_sessions_acquire (sessions, "b");
+	ok = ok && b && !b->rstate.http_mode && !b->rstate.baseurl && !b->rstate.frida_mode;
 	r2mcp_sessions_free (sessions);
-	RadareState reset = { .frida_mode = true };
+	RadareState reset = { .frida_mode = true, .http_mode = true, .baseurl = strdup ("http://127.0.0.1:3/cmd/") };
 	r2mcp_rstate_fini (&reset);
-	return ok && !reset.frida_mode? 0: 1;
+	return ok && !reset.frida_mode && !reset.http_mode && !reset.baseurl? 0: 1;
 }
 EOF
 	${CC:-cc} ${CFLAGS:-} -I src $(pkg-config --cflags r_core) "$TMPDIR/session-mode.c" \
@@ -872,9 +880,133 @@ run_open_session_regression() {
 	printf '%s\n' "$(response_by_id "$resp" 5)" | jq -e '.result.content[0].text | type == "string"' >/dev/null 2>&1 || {
 		fail "open_session: existing remote session should survive failed reconnect, got $(response_by_id "$resp" 5)"
 	}
+	: > "$req"
+	append_tool_call "$req" 1 show_info '{}'
+	run_session "$req" "$resp" -u "$good_url" -n -N
+	printf '%s\n' "$(response_by_id "$resp" 1)" | jq -e '.result.content[0].text | contains("/bin/ls")' >/dev/null || fail "-u default target must retain remote routing"
+	local plugin="$PWD/src/libcore_r2mcp.$(r2 -H R2_LIBEXT)"
+	r2 -N -q -c "L $plugin" -c "e r2mcp.baseurl=$good_url" -c 'r2mcp show_info' -c q /bin/cat > "$TMPDIR/proxy-plugin.out" 2> "$TMPDIR/proxy-plugin.log"
+	grep -q '/bin/ls' "$TMPDIR/proxy-plugin.out" || fail "plugin configured proxy must route to its default remote target"
 	kill "$server_pid" 2>/dev/null || true
 	wait "$server_pid" 2>/dev/null || true
 	trap 'rm -rf "$TMPDIR"' EXIT INT TERM
+}
+
+run_http_target_isolation_regression() {
+	if ! command -v python3 >/dev/null 2>&1; then
+		echo "skip HTTP target isolation regression: python3 not found"
+		return
+	fi
+	if "$BIN" -h 2>&1 | grep -q "requires radare2 ABI"; then
+		echo "skip HTTP target isolation regression: missing HTTP header API"
+		return
+	fi
+	python3 - "$BIN" "$TMPDIR" <<'PY'
+import json
+import socket
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+class Backend(BaseHTTPRequestHandler):
+    # Controlled routing metadata, not a real Frida attachment.
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        body = b"file frida://routing-control\n"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+backend = HTTPServer(("127.0.0.1", 0), Backend)
+threading.Thread(target=backend.serve_forever, daemon=True).start()
+remote = "http://127.0.0.1:%d/cmd/" % backend.server_port
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+url = "http://127.0.0.1:%d/" % port
+log = open(sys.argv[2] + "/http-target.log", "w")
+server = subprocess.Popen([sys.argv[1], "-n", "-N", "-r", "-L", "-X", "2", "-H", str(port), "-u", remote], stdout=log, stderr=log)
+
+
+def request(session, method, params):
+    headers = {"Content-Type": "application/json"}
+    if session:
+        headers["X-Session-ID"] = session
+    data = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    with urllib.request.urlopen(urllib.request.Request(url, data, headers), timeout=10) as response:
+        return json.load(response)
+
+
+def tool(session, name, arguments=None):
+    return request(session, "tools/call", {"name": name, "arguments": arguments or {}})
+
+
+def text(response):
+    assert "error" not in response and not response["result"].get("isError"), response
+    return response["result"]["content"][0]["text"]
+
+
+def catalog(session):
+    return request(session, "tools/list", {})["result"]["tools"]
+
+
+try:
+    for attempt in range(100):
+        try:
+            request(None, "ping", {})
+            break
+        except OSError:
+            assert server.poll() is None, "HTTP server exited"
+            time.sleep(0.05)
+    else:
+        raise AssertionError("HTTP server did not start")
+    assert "frida://routing-control" in text(tool(None, "show_info"))
+    native_catalog = catalog("B")
+    assert any(t["name"] == "open_file" for t in native_catalog), "new sessions inherited the default proxy"
+    assert "File opened successfully" in text(tool("B", "open_file", {"file_path": "/bin/cat"}))
+    native_info = text(tool("B", "show_info"))
+    assert "/bin/cat" in native_info
+    assert "error" in tool("B", "open_session", {"url": "http://127.0.0.1:1/cmd/"})
+    assert text(tool("B", "show_info")) == native_info, "failed connect changed the native target"
+    assert tool("A", "open_file", {"file_path": "frida://"})["result"]["isError"]
+    assert catalog("A") == native_catalog, "failed native open changed A's mode"
+    assert "Successfully connected" in text(tool("A", "open_session", {"url": remote}))
+    remote_catalog = catalog("A")
+    assert any(t["name"] == "run_frida_script" for t in remote_catalog)
+    assert text(tool("B", "show_info")) == native_info, "A redirected B's target"
+    assert catalog("B") == native_catalog, "A changed B's catalog"
+    assert "No active remote session" in text(tool("B", "close_session"))
+    assert "frida://routing-control" in text(tool("A", "show_info")), "B disconnected A"
+    assert "error" in tool("A", "open_session", {"url": "http://127.0.0.1:1/cmd/"})
+    assert catalog("A") == remote_catalog, "failed reconnect changed A's mode"
+    assert "frida://routing-control" in text(tool("A", "show_info")), "failed reconnect lost A's endpoint"
+    assert "closed successfully" in text(tool("A", "close_session"))
+    assert catalog("A") == native_catalog, "close stranded A's remote mode"
+    assert text(tool("B", "show_info")) == native_info, "A's close changed B"
+    assert "File opened successfully" in text(tool("A", "open_file", {"file_path": "/bin/ls"}))
+    assert "/bin/ls" in text(tool("A", "show_info"))
+    assert "Successfully connected" in text(tool("A", "open_session", {"url": remote}))
+    text(tool("B", "show_info"))
+    catalog("C")  # A is LRU; replacing it must release its endpoint and mode.
+    assert catalog("A") == native_catalog, "evicted A retained a remote target"
+    assert "frida://routing-control" in text(tool(None, "show_info")), "session eviction changed the default proxy"
+    print("HTTP selected-target isolation passed (controlled routing only)")
+finally:
+    server.terminate()
+    server.wait(timeout=10)
+    backend.shutdown()
+    backend.server_close()
+    log.close()
+PY
 }
 
 run_http_sandbox_grain_regression() {
@@ -1465,6 +1597,43 @@ run_native_project_regressions() {
 	[ ! -e "$artifacts/memory.r2prj" ] || fail "refused native snapshot must not publish an artifact"
 }
 
+run_raw_project_regression() {
+	local raw="$TEST_DIR/raw.bin"
+	local artifacts="$TMPDIR/raw-projects"
+	local req="$TMPDIR/raw-project.req"
+	local resp="$TMPDIR/raw-project.resp"
+	local args
+	mkdir -p "$artifacts"
+	printf '\220\303\220\303\220\303\220\303\220\303\220\303\220\303\220\303' > "$raw"
+	args=$(jq -cn --arg file "$raw" '{file_path:$file,arch:"x86",bits:16,cpu:"i386",baddr:"0x400000"}')
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_tool_call "$req" 2 open_file "$args"
+	append_tool_call "$req" 3 run_command '{"command":"p8 4 @0x400000"}'
+	append_tool_call "$req" 4 set_comment '{"address":"0x400000","message":"MCP_RAW_SAVED"}'
+	append_tool_call "$req" 5 run_command '{"command":"e io.cache=true;wx cc @0x400000"}'
+	append_tool_call "$req" 6 save_project '{"name":"raw.r2prj"}'
+	append_tool_call "$req" 7 close_file '{}'
+	append_tool_call "$req" 8 open_file "$args"
+	append_tool_call "$req" 9 run_command '{"command":"p8 4 @0x400000"}'
+	append_tool_call "$req" 10 restore_project '{"name":"raw.r2prj"}'
+	append_tool_call "$req" 11 run_command '{"command":"p8 4 @0x400000"}'
+	append_tool_call "$req" 12 disassemble '{"address":"0x400000","num_instructions":1}'
+	run_session "$req" "$resp" -n -N -r -s "$TEST_DIR" -D "$artifacts"
+	local id
+	for id in 2 8; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.content[0].text == "File opened successfully."' >/dev/null || fail "raw same-parameter open failed (#$id)"
+	done
+	for id in 3 9; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.content[0].text == "90c390c3\n"' >/dev/null || fail "raw explicit-base open must expose original mapped bytes (#$id)"
+	done
+	for id in 6 10; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '(.result.isError != true) and (.result.content[0].text | contains("status 0"))' >/dev/null || fail "raw strict snapshot/restore failed (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 11)" | jq -e '.result.content[0].text == "ccc390c3\n"' >/dev/null || fail "raw restore lost the virtual edit"
+	printf '%s\n' "$(response_by_id "$resp" 12)" | jq -e '.result.content[0].text | contains("MCP_RAW_SAVED")' >/dev/null || fail "raw restore lost the saved comment"
+}
+
 need_cmd jq
 need_cmd mktemp
 need_cmd curl
@@ -1544,6 +1713,7 @@ run_close_file_regression
 run_failed_open_mode_regression
 run_session_mode_isolation_regression
 run_open_session_regression
+run_http_target_isolation_regression
 run_http_sandbox_grain_regression
 run_http_auth_regression
 run_sandbox_regressions
@@ -1559,5 +1729,6 @@ run_native_decompile_status_regressions
 run_borland_profile_regressions
 run_native_analysis_read_regressions
 run_native_project_regressions
+run_raw_project_regression
 
 echo "== OK =="

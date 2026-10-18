@@ -100,6 +100,8 @@ the `X-Session-ID` request header:
 r2mcp -H 8765 -X 8:600
 ```
 
+Each selected session owns its native core or remote endpoint and target mode. With `-L`, `open_session` and `close_session` affect only that `X-Session-ID`; a failed connection leaves its previous target unchanged. Requests without the header use the default target, including a proxy configured by `-u` or `r2mcp.baseurl`. New header-selected sessions start with their own native core and do not inherit that default proxy. Closing or evicting one session does not disconnect another.
+
 HTTP bearer authentication is enabled with `-a <token>`. Clients must send
 `Authorization: Bearer <token>` on every `GET` and `POST` request:
 
@@ -167,6 +169,8 @@ r2mcp -n -N -s /absolute/task/inputs -D /absolute/task/projects
 ```
 
 The ordinary `save_project` and `restore_project` tools accept a required `name`, a single literal filename under `-D`. `save_project` invokes only the host's strict `prj snapshot` action: it requires a restorable read-only original and refuses non-restorable sources, including in-memory sessions, before publishing an artifact. Generic `prj save` remains a separate native host action for merge-capable projects, not an MCP fallback or alias. `restore_project` invokes native `prj restore`. Both tools use the existing native project format and command status, including successful operations with no output; project/cache bytes remain opaque to MCP. Restore requires the matching original to be explicitly opened normally first, with matching loader/base/layout and relocation settings. It restores analysis and effective cache edits onto that read-only original without opening saved paths, replaying commands/configuration or switching files. Older project artifacts without the required native identity/cache state are not migrated or loaded through a fallback.
+
+For a raw/headerless file, `open_file` applies an explicit `baddr` through the normal loader's initial map address, before load completion. Reopen the same original with the same `arch`, `bits`, `cpu` and `baddr` before restoring its snapshot; no post-load remapping or baseline recertification is needed.
 
 Opening a different file or changing the current base is refused while a file remains open; the current target and analysis are retained. Opening the same file at the same base remains a no-op. Save any state you need, then call `close_file` explicitly before another `open_file`. `close_file` deliberately discards unsaved in-memory analysis. No autosave occurs on close or process exit. A save → explicit close → normal open of the same original → restore workflow uses the host persistence owner, not a separate MCP analysis store.
 

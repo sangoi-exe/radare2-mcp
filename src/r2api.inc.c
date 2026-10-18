@@ -105,7 +105,7 @@ static char *r2_cmd_filter(const char *cmd, bool *changed) {
 
 static char *r2cmd_over_http(ServerState *ss, const char *cmd) {
 	int rc = 0;
-	char *res = curl_post_capture (ss->baseurl, cmd, &rc);
+	char *res = curl_post_capture (ss->rstate->baseurl, cmd, &rc);
 	if (rc != 0) {
 		R_LOG_ERROR ("curl %d", rc);
 		free (res);
@@ -166,7 +166,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 		}
 	}
 
-	if (ss->http_mode) {
+	if (ss->rstate->http_mode) {
 		free (ss->rstate->current_file);
 		ss->rstate->current_file = strdup (filepath);
 		ss->rstate->file_opened = true;
@@ -203,7 +203,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 	}
 
 	R_LOG_INFO ("Opening file: %s", filepath);
-	RIODesc *file = r_core_file_open (core, filepath, R_PERM_RX, 0);
+	RIODesc *file = r_core_file_open (core, filepath, R_PERM_RX, baddr == UT64_MAX? 0: baddr);
 	if (!file || !core->io || !core->io->desc) {
 		R_LOG_ERROR ("Failed to open file: %s", filepath);
 		if (was_sandboxed) {
@@ -216,14 +216,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 	RBinFile *bi = core->bin->cur;
 	bool have_bin_info = bi && bi->bo && bi->bo->info && bi->bo->info->type;
 	if (!have_bin_info && baddr != UT64_MAX) {
-		ut64 fsize = r_io_desc_size (file);
-		if (fsize > 0) {
-			r_io_map_add (core->io, file->fd, R_PERM_RX, 0, baddr, fsize);
-			r_core_seek (core, baddr, true);
-			R_LOG_INFO ("Mapped raw file at 0x%" PFMT64x " (size 0x%" PFMT64x ")", baddr, fsize);
-		} else {
-			R_LOG_WARN ("Don't use baddr on unknown files. Consider mapping the file instead.");
-		}
+		r_core_seek (core, baddr, true);
 	}
 	free (ss->rstate->current_file);
 	ss->rstate->current_file = strdup (filepath);
@@ -241,7 +234,7 @@ R_IPI bool r2_open_file(ServerState *ss, const char *filepath, ut64 baddr, const
 }
 
 R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
-	if (ss && ss->http_mode) {
+	if (ss && ss->rstate->http_mode) {
 		/* In HTTP mode we won't run local analysis; return empty string. */
 		return strdup ("");
 	}
@@ -286,7 +279,7 @@ R_IPI char *r2_analyze(ServerState *ss, int level, int timeout_seconds) {
 }
 
 R_IPI int r2_function_count(ServerState *ss) {
-	if (!ss || ss->http_mode) {
+	if (!ss || ss->rstate->http_mode) {
 		return 0;
 	}
 	char *cnt = r2mcp_cmd (ss, "aflc");

@@ -29,7 +29,7 @@ char *r2mcp_project_command(ServerState *ss, const char *name, bool restore) {
 	if (R_STR_ISEMPTY (ss->project_dir)) {
 		return jsonrpc_tooltext_error_response ("Native project operations require an explicit artifact directory: start r2mcp with -D <directory>.");
 	}
-	if (ss->http_mode || ss->rstate->frida_mode || !ss->rstate->core || !ss->rstate->file_opened) {
+	if (ss->rstate->http_mode || ss->rstate->frida_mode || !ss->rstate->core || !ss->rstate->file_opened) {
 		return jsonrpc_tooltext_error_response ("Open the matching original normally in the local native core before saving or restoring a project.");
 	}
 	if (R_STR_ISEMPTY (name) || !strcmp (name, ".") || !strcmp (name, "..") || strpbrk (name, "/\\")) {

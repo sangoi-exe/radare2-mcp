@@ -1,7 +1,7 @@
 /* r2mcp - MIT - Copyright 2026 - pancake */
 
 static char *tool_apply_borland_profiles(ServerState *ss, RJson *tool_args) {
-	if (ss->http_mode || ss->rstate->frida_mode || !ss->rstate->core) {
+	if (ss->rstate->http_mode || ss->rstate->frida_mode || !ss->rstate->core) {
 		return jsonrpc_tooltext_error_response ("Qualified Borland profiles require a local native analysis core.");
 	}
 	char *res = r2mcp_cmd (ss, "{\"cmd\":\"a:borland\",\"trim\":false}");
@@ -47,7 +47,7 @@ static char *tool_get_binary_metadata(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("key");
 	}
 	RCore *core = ss->rstate->core;
-	if (ss->http_mode || !core) {
+	if (ss->rstate->http_mode || !core) {
 		return jsonrpc_tooltext_error_response ("Binary metadata requires a local native binary provider.");
 	}
 	PJ *pj = NULL;
@@ -79,7 +79,7 @@ static char *tool_get_comment(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_numeric_param ("address");
 	}
 	RCore *core = ss->rstate->core;
-	if (ss->http_mode || !core) {
+	if (ss->rstate->http_mode || !core) {
 		return jsonrpc_tooltext_error_response ("Comments require a local native analysis core.");
 	}
 	PJ *pj = pj_new ();
@@ -106,7 +106,7 @@ static char *tool_get_data_type(ServerState *ss, RJson *tool_args) {
 		return jsonrpc_error_missing_param ("name");
 	}
 	RCore *core = ss->rstate->core;
-	if (ss->http_mode || !core) {
+	if (ss->rstate->http_mode || !core) {
 		return jsonrpc_tooltext_error_response ("Named types require a local native analysis core.");
 	}
 	R_CRITICAL_ENTER (core);

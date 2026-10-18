@@ -380,8 +380,6 @@ int r2mcp_main(int argc, const char **argv) {
 		.enable_run_command_tool = enable_run_command_tool,
 		.log_enabled = true,
 		.use_sessions = use_sessions,
-		.http_mode = http_mode,
-		.baseurl = baseurl,
 		.svc_baseurl = svc_baseurl,
 		.auth_token = auth_token,
 		.auth_token_generated = auth_token_generated,
@@ -396,7 +394,7 @@ int r2mcp_main(int argc, const char **argv) {
 		.client_capability_keys = NULL,
 		.enabled_tools = enabled_tools,
 		.disabled_tools = disabled_tools,
-		.default_rstate = { .current_baddr = UT64_MAX, .analyze_level = -1 }
+		.default_rstate = { .http_mode = http_mode, .baseurl = baseurl, .current_baddr = UT64_MAX, .analyze_level = -1 }
 	};
 	ss.rstate = &ss.default_rstate;
 	/* Enable logging */
@@ -413,7 +411,7 @@ int r2mcp_main(int argc, const char **argv) {
 		prompts_registry_init (&ss);
 	}
 	/* Initialize r2 (unless running in HTTP client mode) */
-	if (!ss.http_mode) {
+	if (!ss.rstate->http_mode) {
 		if (!r2mcp_state_init (&ss)) {
 			R_LOG_ERROR ("Failed to initialize radare2");
 			r2mcp_log_pub (&ss, "Failed to initialize radare2");
@@ -446,7 +444,7 @@ int r2mcp_main(int argc, const char **argv) {
 	RListIter *iter;
 	const char *cmd;
 	r_list_foreach (cmds, iter, cmd) {
-		char *res = ss.http_mode? r2mcp_cmd (&ss, cmd): r_core_cmd_str (ss.rstate->core, cmd);
+		char *res = ss.rstate->http_mode? r2mcp_cmd (&ss, cmd): r_core_cmd_str (ss.rstate->core, cmd);
 		free (res);
 	}
 	r_list_free (cmds);
@@ -458,7 +456,6 @@ int r2mcp_main(int argc, const char **argv) {
 			prompts_registry_fini (&ss);
 		}
 		r2mcp_state_fini (&ss);
-		free (ss.baseurl);
 		free (ss.svc_baseurl);
 		free (ss.auth_token);
 		free (ss.sandbox);
@@ -515,7 +512,6 @@ int r2mcp_main(int argc, const char **argv) {
 	}
 	r2mcp_state_fini (&ss);
 	/* Cleanup */
-	free (ss.baseurl);
 	free (ss.svc_baseurl);
 	free (ss.auth_token);
 	free (ss.sandbox);

@@ -259,7 +259,7 @@ static inline ToolMode current_mode(const ServerState *ss) {
 	if (ss->readonly_mode) {
 		mode |= TOOL_MODE_RO;
 	} else {
-		if (ss->http_mode) {
+		if (ss->rstate->http_mode) {
 			mode |= TOOL_MODE_HTTP;
 		}
 		if (ss->rstate->frida_mode) {
@@ -468,7 +468,7 @@ static char *filter_named_functions_only(const char *input) {
 
 static char *tool_close_file(ServerState *ss, RJson *tool_args) {
 	(void)tool_args;
-	if (ss->http_mode) {
+	if (ss->rstate->http_mode) {
 		return jsonrpc_tooltext_response ("In r2pipe mode we won't close the file.");
 	}
 	if (ss->rstate->core) {
@@ -946,7 +946,7 @@ static char *tool_decompile_function(ServerState *ss, RJson *tool_args) {
 	// pdc retains the dispatcher's address-base behavior for every backend.
 	const char *language = r_json_get_str (tool_args, "language");
 	bool native_backend = false;
-	if (!language && !ss->http_mode && !ss->rstate->frida_mode && ss->rstate->core) {
+	if (!language && !ss->rstate->http_mode && !ss->rstate->frida_mode && ss->rstate->core) {
 		RCore *core = ss->rstate->core;
 		R_CRITICAL_ENTER (core);
 		const char *backend = r_config_get (core->config, "cmd.pdc");
@@ -1260,7 +1260,7 @@ static char *tool_run_script(ServerState *ss, RJson *tool_args) {
 	if (R_STR_ISEMPTY (file_path)) {
 		return jsonrpc_error_response (-32602, "Empty file_path", NULL, NULL);
 	}
-	if (ss->http_mode) {
+	if (ss->rstate->http_mode) {
 		return jsonrpc_error_response (-32603, "run_script is not supported in HTTP mode", NULL, NULL);
 	}
 	const char *err = r2mcp_sandbox_check (ss, file_path);
@@ -1281,7 +1281,7 @@ static char *tool_list_sessions(ServerState *ss, RJson *tool_args) {
 	(void)ss;
 	// r2agent command doesn't require an open file, run it directly
 	char *res = NULL;
-	if (ss->http_mode) {
+	if (ss->rstate->http_mode) {
 		// In HTTP mode, we can't run r2agent locally, return empty result
 		res = strdup ("[]");
 	} else {
@@ -1335,27 +1335,16 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 	if (!is_localhost (url)) {
 		return jsonrpc_error_response (-32603, "Only localhost session URLs are allowed", NULL, NULL);
 	}
-
-	// Preserve the previous baseurl even when reconnecting from one remote
-	// session to another, so failed probes can fully restore the old state.
-	char *old_baseurl = NULL;
-	bool old_http_mode = ss->http_mode;
-	if (ss->baseurl) {
-		old_baseurl = strdup (ss->baseurl);
+	char *baseurl = strdup (url);
+	if (!baseurl) {
+		return jsonrpc_error_response (-32603, "Failed to copy session URL", NULL, NULL);
 	}
 
-	// Set up HTTP mode for this session
-	ss->http_mode = true;
-	free (ss->baseurl);
-	ss->baseurl = strdup (url);
-
-	// Test the connection by running a simple command
-	char *test_result = r2mcp_cmd (ss, "i");
-	if (!test_result || strstr (test_result, "HTTP request failed")) {
-		// Restore previous state if connection failed
-		ss->http_mode = old_http_mode;
-		free (ss->baseurl);
-		ss->baseurl = old_baseurl;
+	// Probe before changing the selected target, including on reconnect.
+	int rc = 0;
+	char *test_result = curl_post_capture (baseurl, "i", &rc);
+	if (rc || !test_result) {
+		free (baseurl);
 		free (test_result);
 
 		char *error_msg = r_str_newf ("Failed to connect to URL: %s", url);
@@ -1364,9 +1353,12 @@ static char *tool_open_session(ServerState *ss, RJson *tool_args) {
 		return error_resp;
 	}
 
-	ss->rstate->frida_mode = strstr (test_result, "frida://") != NULL;
+	RadareState *rs = ss->rstate;
+	free (rs->baseurl);
+	rs->baseurl = baseurl;
+	rs->http_mode = true;
+	rs->frida_mode = strstr (test_result, "frida://") != NULL;
 	free (test_result);
-	free (old_baseurl);
 
 	ss->rstate->file_opened = true;
 	ss->rstate->current_baddr = UT64_MAX;
@@ -1384,20 +1376,19 @@ static char *tool_close_session(ServerState *ss, RJson *tool_args) {
 	}
 	(void)tool_args;
 
-	if (!ss->http_mode) {
+	if (!ss->rstate->http_mode) {
 		return jsonrpc_tooltext_response ("No active remote session to close.");
 	}
 
 	// Clear the HTTP mode and baseurl
-	ss->http_mode = false;
+	ss->rstate->http_mode = false;
 	ss->rstate->frida_mode = false;
 	ss->rstate->file_opened = false;
 	ss->rstate->current_baddr = UT64_MAX;
 	free (ss->rstate->current_file);
 	ss->rstate->current_file = NULL;
 	ss->rstate->analyze_level = -1;
-	free (ss->baseurl);
-	ss->baseurl = NULL;
+	R_FREE (ss->rstate->baseurl);
 
 	return jsonrpc_tooltext_response ("Remote session closed successfully.");
 }
@@ -1555,7 +1546,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 
 	// Special-case: open_file
 	if (!strcmp (tool_name, "open_file")) {
-		if (ss->http_mode) {
+		if (ss->rstate->http_mode) {
 			char *res = r2mcp_cmd (ss, "i");
 			char *foo = r_str_newf ("File was already opened, this are the details:\n%s", res);
 			char *out = jsonrpc_tooltext_response (foo);
@@ -1638,7 +1629,7 @@ char *tools_call(ServerState *ss, const char *tool_name, RJson *tool_args) {
 		goto cleanup;
 	}
 
-	if (!ss->http_mode && !ss->rstate->file_opened) {
+	if (!ss->rstate->http_mode && !ss->rstate->file_opened) {
 		if (!strcmp (tool_name, "list_functions")) {
 			result = jsonrpc_tooltext_response ("No file is currently open. Call open_file first, then call list_functions again.");
 			goto cleanup;
