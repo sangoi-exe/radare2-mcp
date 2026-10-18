@@ -1,6 +1,5 @@
 # Radare2 MCP Server
 
-[![ci](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/radareorg/radare2-mcp/actions/workflows/ci.yml)
 [![radare2](https://img.shields.io/badge/radare2-6.2.4-green)](https://github.com/radareorg/radare2)
 
 <img width="400" alt="r2mcp logo" src="./r2mcp.png" />
@@ -302,7 +301,7 @@ This will compile the server and place the `r2mcp` binary in `/usr/local/bin` on
 
 #### Windows
 
-For Windows, just use meson and ninja like it's done in the CI:
+For Windows, just use meson and ninja:
 
 ```cmd
 meson b
