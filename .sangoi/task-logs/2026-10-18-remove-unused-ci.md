@@ -16,6 +16,18 @@ Worker and root checks establish actual workflow path absence, passing `git diff
 
 Runtime, test, local Make/Meson and packaging implementations are unchanged from the baseline. No rebuild, runtime test, replacement workflow, validator or temporary artifact was created. Existing functional commits and their prior proof remain intact. These local checks do not prove future GitHub acceptance.
 
-## Current state
+## Code Gate
 
-Implementation is committed. The local Code Gate and subsequent exact-candidate publication remain pending. Root will publish only by normal fast-forward, with read-before-write and remote-SHA verification. A rejection or ambiguous result does not authorize another transport, OAuth expansion or history rewriting.
+The first native Claude invocation failed with `EAI_AGAIN` and zero semantic coverage. Its recovery request was denied before process launch because explicit disclosure authority was missing. Root stopped, asked the user, and received `sim` at `2026-10-18T02:30:15.523-03:00`, turn `01a14d7d-3b49-7932-b951-48a61cca9f8a`, current-session rollout line 4017. The grant covers only this delta and direct-reference evidence, without credentials. Fresh initial and reciprocal calls then succeeded with exit 0, observed `claude-opus-5-5` identity and no denials. The earlier failures remain failures; no waived or fabricated review is recorded.
+
+The actual independent initials are root rollout lines 3956 and 4053; reciprocal replies are 4089 and 4108. Both reviewers account for the entire five-file delta and relevant direct followers. Root inspected the actual reports and resolved the prospective progress clause as bookkeeping, while retaining future GitHub rejection as an unverified inference rather than an external-contract fact. Native Git/path/reference checks establish local deletion and preservation, not future publication acceptance.
+
+The single formal `Senior Code Reviewer / Task change-set review` on `/root/mcp_remove_ci_senior` returned `PROCEED_WITH_NITS` at `2026-10-18T02:41:30.841-03:00` (America/Sao_Paulo), rollout line 4145. Semantic coverage is complete; no material finding or required source correction remains. The only nit is the plan's already-fulfilled evidence-commit next action, superseded during factual closeout. The matching transition is `record-nits-enter-closeout`, with no rerun. No Claude-failure exception or review override was applied.
+
+## Publication and closeout
+
+Read-before-write reconfirmed origin `sangoi-exe/radare2-mcp`, authenticated identity `sangoi-exe`, candidate `67f78e1fe6a31d69130fe9e208058848f69b9265` and remote `master` at `e8fb3ac34e98d633661127d9b13e1b0174b8f2d8`. The only local changes were root-owned factual closeout documents, excluded from that exact-candidate push.
+
+The ordinary push of the reviewed candidate succeeded with exit 0, advancing remote `master` from `e8fb3ac` to `67f78e1`. A subsequent `git ls-remote` returned the complete candidate SHA. This actual observation refutes the predicted rejection for this candidate; it does not establish a universal rule about GitHub's workflow permission checks. No credential scope expansion, alternate transport, force push, tag change or history rewrite occurred. The existing `gh` credential helper was selected per Git process without changing stored Git configuration.
+
+The requested deletion and pending MCP publication are complete. The progress-wording nit is resolved in the canonical plan; the actual verdict remains `PROCEED_WITH_NITS`, not relabeled as a different outcome. This final documentary checkpoint is `bookkeeping memorialization` of the established result. It changes only the three task documents, not the reviewed implementation or proof, and requires no additional semantic Gate. No runtime test or rebuild is claimed. The deleted workflow remains recoverable from Git history.

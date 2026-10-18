@@ -1,8 +1,8 @@
 # Intent Contract: remove unused MCP CI
 
-Status: active
+Status: complete
 Task mode: Doctrine
-Lifecycle phase: Implementation
+Lifecycle phase: Closeout
 Strategy epoch: 1
 Plan kind: Targeted Adjustment Plan
 Plan kind rationale: Remove one unused automation surface and its direct advertisement, without changing the MCP product or build/test commands.
@@ -42,6 +42,12 @@ Audit the confirmed Intent Contract, dispatch one bounded non-web Worker, integr
 
 The registered Initial Intent Contract audit on `/root/mcp_remove_ci_plan` returned `PROCEED`, with complete field coverage and no material finding. Root applied the matching `publish-plan-locator-and-enter-implementation` transition and clarified the direct-reference footprint before Worker dispatch. No Gate override or extra user checkpoint is involved.
 
-Worker C01 on `/root/mcp_remove_ci_worker` completed the two-file deletion/reference cleanup. Root inspected the full diff and staged patch, verified absence and reference classification, and committed it as `1a27b8961cc29dc1204b382d71a855d464a7a64e`. The original base remains an ancestor. Native Git shows no runtime, build, test or packaging implementation change. No builds or tests were rerun for this automation/documentation-only delta. Code review and publication remain pending.
+Worker C01 on `/root/mcp_remove_ci_worker` completed the two-file deletion/reference cleanup. Root inspected the full diff and staged patch, verified absence and reference classification, and committed it as `1a27b8961cc29dc1204b382d71a855d464a7a64e`. The original base remains an ancestor. Native Git shows no runtime, build, test or packaging implementation change. No builds or tests were rerun for this automation/documentation-only delta.
 
-Material decisions still open: none. Residual-risk acceptances: none. Blocker: none. Next action: commit the factual task evidence and obtain the narrow local `Task change-set review` before publication.
+The first Claude call failed without semantic coverage; its recovery request was denied before launch pending disclosure authority. The user explicitly approved sending only this five-file delta and necessary direct followers, without credentials, with `sim` at `2026-10-18T02:30:15.523-03:00`, turn `01a14d7d-3b49-7932-b951-48a61cca9f8a`, current-session rollout line 4017. Fresh native initial and reciprocal assessments then completed successfully with the required model. No review waiver or failed-call exception was used, and no GitHub credential scope changed.
+
+The narrow local Code Gate reviewed `333e07cf..67f78e1` and returned `PROCEED_WITH_NITS`, route condition `not-applicable`, at `2026-10-18T02:41:30.841-03:00` (America/Sao_Paulo). Final authority: `/root/mcp_remove_ci_senior`, current-session rollout line 4145. Complete paired coverage, both reciprocal replies and root analysis support the disposition. There is no required source correction. The only nit was the already-fulfilled evidence-commit next-action clause; this factual update supersedes that clause. The registered `record-nits-enter-closeout` transition requires no semantic rerun.
+
+The exact reviewed candidate `67f78e1fe6a31d69130fe9e208058848f69b9265` was published by normal fast-forward to `sangoi-exe/radare2-mcp` `master`. A fresh `git ls-remote` readback returned that exact SHA. GitHub accepted this candidate with the existing credential and preserved history; no OAuth expansion, alternate transport or force push was needed. This observation closes publication for the selected candidate, not a universal GitHub workflow-permission claim.
+
+Material decisions still open: none. Residual-risk acceptances: none. Blocker: none. Next action: none within the completed Scope. The final documentary checkpoint only records the actual Gate, resolved progress nit and verified publication; it changes no reviewed implementation or validation claim.
