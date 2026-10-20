@@ -274,12 +274,14 @@ run_dynamic_suite() {
 			'{id:$id, kind:$kind, marker:$marker}' >> "$meta"
 		NEXT_ID=$((NEXT_ID + 1))
 	fi
-	run_session "$req" "$resp" "$@"
-
 	if [ "$open_mode" = "with-open" ]; then
+		run_session "$req" "$resp" -s "$TEST_DIR" "$@"
 		local open_file_response
 		open_file_response=$(response_by_id "$resp" 2)
 		[ -n "$open_file_response" ] || fail "$suite_name: missing open_file response"
+		printf '%s\n' "$open_file_response" | jq -e '.error == null and .result != null and (.result.isError // false) == false' >/dev/null || fail "$suite_name: fixture open failed: $open_file_response"
+	else
+		run_session "$req" "$resp" "$@"
 	fi
 
 	while IFS= read -r case_json; do
@@ -330,7 +332,7 @@ run_close_file_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 close_file '{}'
 	append_tool_call "$req" 4 get_current_address '{}'
-	run_session "$req" "$resp"
+	run_session "$req" "$resp" -s "$TEST_DIR"
 
 	local close_response
 	local after_close
@@ -405,7 +407,7 @@ run_repeated_open_file_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 4 get_current_address '{}'
-	run_session "$req" "$resp"
+	run_session "$req" "$resp" -s "$TEST_DIR"
 
 	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.content[0].text == "File opened successfully."' >/dev/null 2>&1 || {
 		fail "open_file: first open should succeed"
@@ -428,7 +430,7 @@ run_different_open_file_regression() {
 	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE2" '{file_path:$file}')"
 	append_tool_call "$req" 4 get_current_address '{}'
 	append_tool_call "$req" 5 show_info '{}'
-	run_session "$req" "$resp"
+	run_session "$req" "$resp" -s "$TEST_DIR"
 
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.isError == true and (.result.content[0].text | contains("close_file explicitly"))' >/dev/null 2>&1 || {
 		fail "open_file: opening a different file must require explicit close/discard"
@@ -453,7 +455,7 @@ run_open_file_baddr_regression() {
 	append_tool_call "$req" 7 close_file '{}'
 	append_tool_call "$req" 8 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file,baddr:"0x500000"}')"
 	append_tool_call "$req" 9 calculate '{"expression":"entry0 - 0x500000"}'
-	run_session "$req" "$resp"
+	run_session "$req" "$resp" -s "$TEST_DIR"
 
 	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.content[0].text == "File opened successfully."' >/dev/null 2>&1 || {
 		fail "open_file baddr: first open should succeed"
@@ -486,7 +488,7 @@ run_numeric_string_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 list_functions "$(jq -cn '{max_length:"-1"}')"
 	append_tool_call "$req" 4 list_functions '{}'
-	run_session "$req" "$resp"
+	run_session "$req" "$resp" -s "$TEST_DIR"
 
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text and (.error | not)' >/dev/null 2>&1 || {
 		fail "list_functions: numeric string max_length should be accepted"
@@ -564,7 +566,7 @@ three#four'five"
 	append_tool_call "$req" "$NEXT_ID" search "$(jq -cn --arg marker "$INJECT_MARKER" '{query:("6161;f " + $marker + "=1337"),type:"hex"}')"
 	NEXT_ID=$((NEXT_ID + 1))
 	append_tool_call "$req" "$NEXT_ID" calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
-	run_session "$req" "$resp" -r -g all
+	run_session "$req" "$resp" -s "$TEST_DIR" -r -g all
 
 	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.content[0].text | contains("R2MCP_HIGH")' >/dev/null || {
 		fail "lookup_address: full-width hexadecimal address was not preserved"
@@ -613,7 +615,7 @@ three#four'five"
 	append_tool_call "$req" 4 list_methods "$(jq -cn --arg classname "$payload" '{classname:$classname}')"
 	append_tool_call "$req" 5 list_files "$(jq -cn --arg path "$literal_path" '{path:$path}')"
 	append_tool_call "$req" 6 calculate "$(jq -cn --arg expression "$INJECT_MARKER" '{expression:$expression}')"
-	run_session "$req" "$resp" -p -R -g all
+	run_session "$req" "$resp" -s "$TEST_DIR" -p -R -g all
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e 'has("result") or .error.code == -32602' >/dev/null || {
 		fail "read-only address injection: missing response"
 	}
@@ -632,7 +634,7 @@ run_lookup_export_regression() {
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_OBJECT" '{file_path:$file}')"
 	append_tool_call "$req" 3 run_command '{"command":"iEj"}'
-	run_session "$req" "$resp" -r
+	run_session "$req" "$resp" -s "$TEST_DIR" -r
 	local export
 	export=$(response_by_id "$resp" 3 | jq -c '.result.content[0].text | fromjson | .[0]')
 	[ "$export" != "null" ] || fail "lookup_export: object fixture has no exports"
@@ -645,7 +647,7 @@ run_lookup_export_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_OBJECT" '{file_path:$file}')"
 	append_tool_call "$req" 3 lookup_export "$(jq -cn --arg name "$name" '{name:$name}')"
 	append_tool_call "$req" 4 lookup_export '{"name":"__R2MCP_NO_SUCH_EXPORT__"}'
-	run_session "$req" "$resp"
+	run_session "$req" "$resp" -s "$TEST_DIR"
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e --arg address "$address" '.result.content[0].text == $address' >/dev/null || {
 		fail "lookup_export: '$name' did not resolve to $address"
 	}
@@ -691,7 +693,7 @@ run_list_filter_regressions() {
 	done < "$tools"
 	[ -s "$meta" ] || fail "list filters: catalog exposed no filter-capable tools"
 
-	run_session "$req" "$resp"
+	run_session "$req" "$resp" -s "$TEST_DIR"
 
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | test("(sym|dbg)\\.r2mcp_sandbox_check(\\s|$)")' >/dev/null 2>&1 || {
 		fail "list_functions filter: single matching row was lost, got $(response_by_id "$resp" 3)"
@@ -1191,12 +1193,12 @@ run_startup_command_regression() {
 	append_tool_call "$req" 2 run_command '{"command":"e cmd.prompt"}'
 	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 4 run_command '{"command":"e cmd.prompt"}'
-	"$BIN" -n -N -r -c 'e cmd.prompt=first' \
+	"$BIN" -n -N -r -s "$TEST_DIR" -c 'e cmd.prompt=first' \
 		-c 'e cmd.prompt=R2MCP_STARTUP; ?e ignored output' < "$req" > "$resp"
 	jq -s -e 'length == 4 and all(.[]; .jsonrpc == "2.0")' "$resp" >/dev/null || fail "startup output corrupted MCP stdout"
 	response_by_id "$resp" 2 | jq -e '.error.code == -32611 and (.error.message | contains("open_file"))' >/dev/null
 	response_by_id "$resp" 4 | jq -e '.result.content[0].text == "R2MCP_STARTUP\n"' >/dev/null || fail "startup commands did not run in order"
-	"$BIN" -n -N -r -c 'e cmd.prompt=R2MCP_STARTUP' \
+	"$BIN" -n -N -r -s "$TEST_DIR" -c 'e cmd.prompt=R2MCP_STARTUP' \
 		-T "open_file file_path=\"$TEST_FILE\"; run_command command=\"e cmd.prompt\"" 2> "$resp"
 	grep -q '"text":"R2MCP_STARTUP\\n"' "$resp" || fail "startup commands did not run before DSL tests"
 }
@@ -1208,7 +1210,7 @@ run_sql_plugin_missing_regression() {
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 sql '{"query":"SELECT 1"}'
-	run_session "$req" "$resp" -n -N
+	run_session "$req" "$resp" -s "$TEST_DIR" -n -N
 	response_by_id "$resp" 3 | jq -e '.error.code == -32603 and (.error.message | contains("No SQL core plugin"))' >/dev/null || fail "missing SQL plugin must be reported"
 }
 
@@ -1222,7 +1224,7 @@ run_command_smoke_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 run_command '{"command":"px"}'
 	append_tool_call "$req" 4 run_command '{"command":""}'
-	run_session "$req" "$resp" -r
+	run_session "$req" "$resp" -s "$TEST_DIR" -r
 
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | type == "string" and length > 0' >/dev/null 2>&1 || {
 		fail "run_command smoke: expected px to return non-empty text, got $(response_by_id "$resp" 3)"
@@ -1242,7 +1244,7 @@ run_command_json_pagination_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 run_command '{"command":"iij","page_size":2}'
 	append_tool_call "$req" 4 run_command '{"command":"iij","cursor":"2","page_size":2}'
-	run_session "$req" "$resp" -r -C structured
+	run_session "$req" "$resp" -s "$TEST_DIR" -r -C structured
 
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '
 		.result.structuredContent
@@ -1272,7 +1274,7 @@ run_command_filter_regression() {
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 run_command "$(jq -cn --arg command "$payload" '{command:$command}')"
 	append_tool_call "$req" 4 list_symbols "$(jq -cn --arg marker "$INJECT_MARKER" '{filter:$marker}')"
-	run_session "$req" "$resp" -r
+	run_session "$req" "$resp" -s "$TEST_DIR" -r
 
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.result.content[0].text | type == "string"' >/dev/null 2>&1 || {
 		fail "command filter regression: expected run_command to return text, got $(response_by_id "$resp" 3)"
@@ -1289,7 +1291,7 @@ run_script_sandbox_regression() {
 	append_notification "$req" notifications/initialized '{}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
 	append_tool_call "$req" 3 run_script "$(jq -cn --arg file "$TEST_SCRIPT" '{file_path:$file}')"
-	run_session "$req" "$resp" -r
+	run_session "$req" "$resp" -s "$TEST_DIR" -r
 
 	printf '%s\n' "$(response_by_id "$resp" 3)" | jq -e '.error.code == -32603 and (.error.message | contains("Sandbox forbids reading script files"))' >/dev/null 2>&1 || {
 		fail "run_script sandbox: script should not run with default sandbox, got $(response_by_id "$resp" 3)"
@@ -1330,7 +1332,7 @@ run_use_decompiler_regression() {
 	append_tool_call "$req" 13 run_command '{"command":"e asm.addr.base=10"}'
 	append_tool_call "$req" 14 decompile_function '{"address":"entry0"}'
 	append_tool_call "$req" 15 run_command '{"command":"e asm.addr.base"}'
-	run_session "$req" "$resp" -r
+	run_session "$req" "$resp" -s "$TEST_DIR" -r
 
 	available=$(response_by_id "$resp" 3 | jq -r '.result.content[0].text')
 	if printf '%s\n' "$available" | grep -qx 'pdg'; then
@@ -1539,6 +1541,92 @@ run_native_analysis_read_regressions() {
 	printf '%s\n' "$(response_by_id "$resp" 17)" | jq -e '.result.structuredContent | (.functions | length) > 0 and .functions[0].addr == .address' >/dev/null || fail "targeted afij details were not returned"
 }
 
+run_relocation_record_regressions() {
+	local catalog="$TMPDIR/relocations.catalog"
+	local req="$TMPDIR/relocations.req"
+	local resp="$TMPDIR/relocations.resp"
+	fetch_catalog "$catalog" -n -N -R
+	jq -e 'any(.[]; .name == "list_relocation_records" and .inputSchema.properties.cursor.type == "string" and .inputSchema.properties.page_size.type == "integer")' "$catalog" >/dev/null || fail "relocation records must be available read-only with source-record pagination"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 list_relocation_records '{}'
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$TEST_FILE" '{file_path:$file}')"
+	append_tool_call "$req" 4 list_relocation_records '{}'
+	run_session "$req" "$resp" -n -N -C both -s "$TEST_DIR"
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.error != null or .result.isError == true' >/dev/null || fail "relocation records without a file must fail"
+	printf '%s\n' "$(response_by_id "$resp" 4)" | jq -e '.result.isError == true' >/dev/null || fail "unsupported relocation provider must fail, not return an empty success"
+	local ne="${R2MCP_TEST_NE:-}"
+	local off16="${R2MCP_TEST_OMF_OFF16:-}"
+	local off16l="${R2MCP_TEST_OMF_OFF16L:-}"
+	if [ -z "$ne$off16$off16l" ]; then
+		echo "SKIP native relocation witnesses: set R2MCP_TEST_NE, R2MCP_TEST_OMF_OFF16 and R2MCP_TEST_OMF_OFF16L to qualified NE and paired original TASM objects"
+		return
+	fi
+	[ -f "$ne" ] && [ -f "$off16" ] && [ -f "$off16l" ] || fail "native relocation witnesses require all three explicit input paths"
+	local kind
+	for kind in ne off16 off16l; do
+		local original
+		case "$kind" in
+		ne) original="$ne" ;;
+		off16) original="$off16" ;;
+		off16l) original="$off16l" ;;
+		esac
+		local input="$TEST_DIR/relocations-$kind.bin"
+		req="$TMPDIR/relocations-$kind.req"
+		resp="$TMPDIR/relocations-$kind.resp"
+		cp "$original" "$input"
+		: > "$req"
+		append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+		append_notification "$req" notifications/initialized '{}'
+		append_request "$req" 2 tools/list '{}'
+		append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$input" '{file_path:$file}')"
+		append_tool_call "$req" 4 run_command '{"command":"aflj"}'
+		append_tool_call "$req" 5 run_command '{"command":"wcj"}'
+		append_tool_call "$req" 6 run_command '{"command":"p8 32"}'
+		append_tool_call "$req" 7 list_relocation_records '{"page_size":10000}'
+		append_tool_call "$req" 8 list_relocation_records '{"page_size":1}'
+		append_tool_call "$req" 9 list_relocation_records '{"page_size":1,"cursor":"1"}'
+		append_tool_call "$req" 10 run_command '{"command":"aflj"}'
+		append_tool_call "$req" 11 run_command '{"command":"wcj"}'
+		append_tool_call "$req" 12 run_command '{"command":"p8 32"}'
+		append_tool_call "$req" 13 list_relocation_records '{"page_size":10000}'
+		run_session "$req" "$resp" -n -N -r -C both -s "$TEST_DIR"
+		jq -se 'any(.[]; .id == 2 and any(.result.tools[]; .name == "list_relocation_records"))' "$resp" >/dev/null || fail "real stdio catalog omitted relocation records"
+		printf '%s\n' "$(response_by_id "$resp" 7)" | jq -e '
+			(.result.isError // false) == false and (.result.structuredContent | .status == "complete" and .count == (.records | length) and .count > 0
+			and all(.records[]; (.native_key | type) == "string" and .application_count == (.applications | length)))
+		' >/dev/null || fail "$kind native record enumeration or associations differ"
+		jq -se '
+			(map(select(.id == 7))[0].result.structuredContent) as $all
+			| (map(select(.id == 8))[0].result) as $first
+			| (map(select(.id == 9))[0].result) as $second
+			| (if $all.count > 1 then $first.pagination.nextCursor == "1" and $first.pagination.hasMore == true else ($first.pagination.hasMore // false) == false end)
+			and $first.structuredContent.records == $all.records[0:1]
+			and $second.structuredContent.records == $all.records[1:2]
+			and $first.structuredContent.context == $all.context and $second.structuredContent.context == $all.context
+		' "$resp" >/dev/null || fail "$kind pagination must preserve whole source records/applications and context"
+		jq -se '
+			def result($id): map(select(.id == $id))[0].result;
+			result(4) == result(10) and result(5) == result(11) and result(6) == result(12) and result(7) == result(13)
+			and (result(4).content[0].text | fromjson | length) == 0
+		' "$resp" >/dev/null || fail "$kind query changed functions, I/O cache, current bytes or native provenance"
+		cmp "$original" "$input" || fail "$kind relocation query modified original input bytes"
+		response_by_id "$resp" 7 | jq '.result.structuredContent' > "$TMPDIR/relocations-$kind.json"
+	done
+	jq -e '.format == "ne" and (.context.segments | length) == .segment_count and any(.records[]; .application_count == 0) and all(.records[]; .record_address_domain == "file" and .source_address_domain == "segment_offset" and (.resolution | type) == "string" and (.application_status | type) == "string")' "$TMPDIR/relocations-ne.json" >/dev/null || fail "NE native statuses/domains or zero-application records are absent"
+	jq -e 'any(.records[].subrecords[]; .location_name == "OFF16" and .location == 1)' "$TMPDIR/relocations-off16.json" >/dev/null || fail "original OFF16 semantics missing"
+	jq -e 'any(.records[].subrecords[]; .location_name == "OFF16L" and .location == 5)' "$TMPDIR/relocations-off16l.json" >/dev/null || fail "original OFF16L semantics missing"
+	for kind in off16 off16l; do
+		jq -e '
+			.format == "omf" and (.context.externals.entries | length) > 0 and (.context.groups.entries | length) > 0
+			and all(.records[]; .record_address_domain == "file" and .target_address_domain == "link_unresolved"
+			and all(.applications[]; .source_address_domain == "synthetic_section")
+			and (.subrecords | length) == .subrecord_count)
+		' "$TMPDIR/relocations-$kind.json" >/dev/null || fail "$kind lost native OMF context or subrecords"
+	done
+}
+
 run_native_project_regressions() {
 	local artifacts="$TMPDIR/project artifacts"
 	local name="manual 'quoted';literal.r2prj"
@@ -1648,10 +1736,11 @@ TEST_DIR="$TMPDIR/work"
 TEST_FILE="$TEST_DIR/ls.bin"
 TEST_FILE2="$TEST_DIR/cat.bin"
 TEST_SCRIPT="$TEST_DIR/script.r2"
-TEST_OBJECT="$PWD/src/r2mcp.o"
+TEST_OBJECT="$TEST_DIR/r2mcp.o"
 mkdir -p "$TEST_DIR"
 cp /bin/ls "$TEST_FILE"
 cp /bin/cat "$TEST_FILE2"
+cp src/r2mcp.o "$TEST_OBJECT"
 printf '?e R2MCP_SCRIPT_ONE\r\n# comment\r\n?e R2MCP_SCRIPT_TWO\r\n' > "$TEST_SCRIPT"
 
 NORMAL_CATALOG="$TMPDIR/catalog.normal.json"
@@ -1728,6 +1817,7 @@ run_decompiler_observation_regressions
 run_native_decompile_status_regressions
 run_borland_profile_regressions
 run_native_analysis_read_regressions
+run_relocation_record_regressions
 run_native_project_regressions
 run_raw_project_regression
 

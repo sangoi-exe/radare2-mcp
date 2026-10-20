@@ -249,6 +249,7 @@ R_UNUSED static char *tool_mode_response(ServerState *ss, char *text, char *stru
 static char *native_command_result(ServerState *ss, RJson *tool_args, char *res, bool envelope);
 
 #include "analysis.inc.c"
+#include "relocations.inc.c"
 
 static inline const char *fx(ServerState *ss) {
 	return ss->rstate->frida_mode? ":": "";
@@ -1700,6 +1701,7 @@ ToolSpec tool_specs[] = {
 	{ "list_memory_maps", "Lists memory regions of the process with addresses and permissions", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_HTTP | TOOL_MODE_FRIDA, tool_list_memory_maps },
 	{ "show_function_details", "Read canonical native afij details at the required address, independent of current seek. Returns address and the native functions array.", TOOL_SCHEMA_ADDRESS_ONLY ("Function address as a numeric expression"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_show_function_details },
 	{ "get_binary_metadata", "Read one exact key/value string from the current binary plugin's native Sdb; missing keys/providers are errors", "{\"type\":\"object\",\"properties\":{\"key\":{\"type\":\"string\",\"description\":\"Exact native metadata key\"}},\"required\":[\"key\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_binary_metadata },
+	{ "list_relocation_records", "Read native NE/OMF source relocation records with nested applications, raw evidence, statuses and address domains; does not apply relocations or analyze. Pages count source records, including records with no applications. Missing providers/features are errors.", "{\"type\":\"object\",\"properties\":{\"cursor\":{\"type\":\"string\",\"description\":\"Source-record pagination cursor from the preceding response\"},\"page_size\":{\"type\":\"integer\",\"description\":\"Source records per page (default: 1000, max: 10000)\"}}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_relocation_records },
 	{ "get_comment", "Read the native analysis comment at an address; absent comment is JSON null", TOOL_SCHEMA_ADDRESS_ONLY ("Comment address as a numeric expression"), TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_comment },
 	{ "get_data_type", "Read an actual named native base-type definition: kind, API-provided bit size, members/counts or enum cases; no C parsing or inferred layout", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Native base-type name\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_data_type },
 	{ "get_current_address", "Shows the current position and function name", "{\"type\":\"object\",\"properties\":{}}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_current_address },

@@ -41,13 +41,15 @@ class JsonNumberTests(unittest.TestCase):
                 with self.subTest(mode=mode):
                     result = subprocess.run(
                         [str(Path(__file__).parent / "src/r2mcp"),
-                         "-n", "-N", "-r", "-C", mode],
+                         "-n", "-N", "-r", "-C", mode, "-s", directory],
                         input=payload, capture_output=True, text=True, timeout=30)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     replies = {reply["id"]: reply for reply in
                                map(json.loads, result.stdout.splitlines())}
                     self.assertEqual(len(replies), len(cases) + 2)
                     self.assertNotIn("error", replies[2])
+                    self.assertIn("result", replies[2])
+                    self.assertFalse(replies[2]["result"].get("isError", False), replies[2])
                     for index, (_, paging, expected) in enumerate(cases, 3):
                         reply = replies[index]["result"]
                         self.assertEqual(json.loads(reply["content"][0]["text"]), expected)
