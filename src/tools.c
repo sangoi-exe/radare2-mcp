@@ -731,14 +731,23 @@ static char *tool_set_comment(ServerState *ss, RJson *tool_args) {
 }
 
 static char *tool_set_function_prototype(ServerState *ss, RJson *tool_args) {
+	RCore *core = ss->rstate->core;
+	if (ss->rstate->http_mode || ss->rstate->frida_mode || !core) {
+		return jsonrpc_tooltext_error_response ("Function signatures require a local native analysis core.");
+	}
 	ut64 address;
 	const char *prototype;
 	if (!validate_address_param (ss, tool_args, "address", &address) ||
 		!validate_required_string_param (tool_args, "prototype", &prototype)) {
 		return jsonrpc_error_missing_param ("address and prototype");
 	}
-	free (r2mcp_cmdf (ss, "'@0x%"PFMT64x"'afs %s", address, prototype));
-	return jsonrpc_tooltext_response ("ok");
+	char *error = NULL;
+	R_CRITICAL_ENTER (core);
+	bool ok = r_core_anal_function_set_signature (core, address, prototype, &error);
+	R_CRITICAL_LEAVE (core);
+	char *response = ok? jsonrpc_tooltext_response ("ok"): jsonrpc_tooltext_error_response (error);
+	free (error);
+	return response;
 }
 
 static char *tool_get_function_prototype(ServerState *ss, RJson *tool_args) {
@@ -1715,7 +1724,7 @@ ToolSpec tool_specs[] = {
 	{ "rename_flag", "Renames a local variable or data reference within the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"name\":{\"type\":\"string\",\"description\":\"Current variable name or data reference\"},\"new_name\":{\"type\":\"string\",\"description\":\"New variable name or data reference\"}},\"required\":[\"address\",\"name\",\"new_name\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_rename_flag },
 	{ "use_decompiler", "Selects which decompiler backend to use (default: pdc)", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\",\"description\":\"Name of the decompiler\"}},\"required\":[\"name\"]}", TOOL_MODE_NORMAL, tool_use_decompiler },
 	{ "get_function_prototype", "Retrieves the function signature at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"}},\"required\":[\"address\"]}", TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_get_function_prototype },
-	{ "set_function_prototype", "Sets the function signature (return type, name, arguments)", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL, tool_set_function_prototype },
+	{ "set_function_prototype", "Applies a C function declaration to the containing local native function; reports rejected declarations and name conflicts", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"prototype\":{\"type\":\"string\",\"description\":\"Function signature in C-like syntax\"}},\"required\":[\"address\",\"prototype\"]}", TOOL_MODE_NORMAL, tool_set_function_prototype },
 	{ "set_comment", "Adds a comment at the specified address", "{\"type\":\"object\",\"properties\":{\"address\":{\"type\":\"string\",\"description\":\"Address expression (e.g. sym.main + 4 or 0x401000)\"},\"message\":{\"type\":\"string\",\"description\":\"Comment text to use\"}},\"required\":[\"address\",\"message\"]}", TOOL_MODE_NORMAL | TOOL_MODE_HTTP, tool_set_comment },
 	{ "list_strings", "Lists strings from data sections with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_MINI | TOOL_MODE_HTTP | TOOL_MODE_RO | TOOL_MODE_FRIDA, tool_list_strings },
 	{ "list_all_strings", "Scans the entire binary for strings with optional regex filter", TOOL_SCHEMA_LIST, TOOL_MODE_NORMAL | TOOL_MODE_RO, tool_list_all_strings },

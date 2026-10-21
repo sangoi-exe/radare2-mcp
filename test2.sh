@@ -1490,6 +1490,61 @@ run_borland_profile_regressions() {
 	printf '%s\n' "$(response_by_id "$resp" 8)" | jq -e '.result.content[0].text | contains("Re-analysis skipped")' >/dev/null || fail "qualified-profile reapply must not reset the cached general-analysis level"
 }
 
+run_native_signature_regressions() {
+	local req="$TMPDIR/signatures.req"
+	local resp="$TMPDIR/signatures.resp"
+	local raw="$TEST_DIR/signatures.bin"
+	printf '\303\220\220\220\220\220\220\220\220\220\220\220\220\220\220\220\303' > "$raw"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 set_function_prototype '{"address":"0x1002","prototype":"int grid(void)"}'
+	append_tool_call "$req" 3 open_file "$(jq -cn --arg file "$raw" '{file_path:$file,baddr:"0x1000",arch:"x86",bits:"64"}')"
+	append_tool_call "$req" 4 run_command '{"command":"af+ 0x1000 original; afb+ 0x1000 0x1000 8; af+ 0x1010 taken; afb+ 0x1010 0x1010 1; s 0x1010"}'
+	append_tool_call "$req" 5 set_function_prototype '{"address":"0x1010","prototype":"long taken(char saved)"}'
+	append_tool_call "$req" 6 set_function_prototype '{"address":"0x1002","prototype":"int grid(uint16_t (*values)[2+3])"}'
+	append_tool_call "$req" 7 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 8 set_function_prototype '{"address":"0x1002","prototype":"int grid(uint16_t (*values)[1|2+3])"}'
+	append_tool_call "$req" 9 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 10 set_function_prototype '{"address":"0x1002","prototype":"int grid(uint16_t (*values)[16>>1])"}'
+	append_tool_call "$req" 11 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 12 set_function_prototype '{"address":"0x1002","prototype":"int (object)"}'
+	append_tool_call "$req" 13 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 14 set_function_prototype '{"address":"0x1002","prototype":"char taken(void)"}'
+	append_tool_call "$req" 15 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 16 get_function_prototype '{"address":"0x1010"}'
+	append_tool_call "$req" 17 set_function_prototype '{"address":"0x1002","prototype":"int grid()"}'
+	append_tool_call "$req" 18 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 19 set_function_prototype '{"address":"0x1002","prototype":"int grid(void)"}'
+	append_tool_call "$req" 20 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 21 set_function_prototype '{"address":"0x2000","prototype":"int absent(void)"}'
+	append_tool_call "$req" 22 get_current_address '{}'
+	run_session "$req" "$resp" -n -N -r -s "$TEST_DIR"
+	local id
+	for id in 5 6 8 10 17 19; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.content[0].text == "ok" and .result.isError != true' >/dev/null || fail "native signature application failed (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.error != null' >/dev/null || fail "signature application without an open core must fail"
+	for id in 12 14 21; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true and (.result.content[0].text | length) > 0' >/dev/null || fail "rejected native signature must return a tool error (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 7)" | jq -e '.result.content[0].text | contains("(*values)[2+3]")' >/dev/null || fail "ordinary array signature was not applied"
+	printf '%s\n' "$(response_by_id "$resp" 9)" | jq -e '.result.content[0].text | contains("(*values)[1|2+3]")' >/dev/null || fail "typed signature lost its bitwise-or expression"
+	for id in 11 13 15; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.content[0].text | contains("grid (uint16_t (*values)[16>>1])")' >/dev/null || fail "typed signature lost its shift expression or changed after refusal (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 16)" | jq -e '.result.content[0].text | contains("long taken (char saved)")' >/dev/null || fail "duplicate name refusal changed the other function"
+	printf '%s\n' "$(response_by_id "$resp" 18)" | jq -e '.result.content[0].text | contains("int grid ()")' >/dev/null || fail "unspecified parameter list was not preserved"
+	printf '%s\n' "$(response_by_id "$resp" 20)" | jq -e '.result.content[0].text | contains("int grid (void)")' >/dev/null || fail "fixed empty parameter list was not preserved"
+	printf '%s\n' "$(response_by_id "$resp" 22)" | jq -e '.result.content[0].text == "0x1010\ntaken\n"' >/dev/null || fail "typed signature application changed the current seek"
+	: > "$req"
+	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
+	append_notification "$req" notifications/initialized '{}'
+	append_tool_call "$req" 2 set_function_prototype '{"address":"0x1000","prototype":"int remote(void)"}'
+	run_session "$req" "$resp" -n -N -p -u http://127.0.0.1:1
+	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.result.isError == true and (.result.content[0].text | contains("local native analysis core"))' >/dev/null || fail "typed signatures must explicitly refuse an unavailable native backend"
+}
+
 run_native_analysis_read_regressions() {
 	local catalog="$TMPDIR/native-reads.catalog"
 	local req="$TMPDIR/native-reads.req"
@@ -1816,6 +1871,7 @@ run_use_decompiler_regression
 run_decompiler_observation_regressions
 run_native_decompile_status_regressions
 run_borland_profile_regressions
+run_native_signature_regressions
 run_native_analysis_read_regressions
 run_relocation_record_regressions
 run_native_project_regressions
