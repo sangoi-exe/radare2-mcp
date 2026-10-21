@@ -1,6 +1,6 @@
 # Radare2 MCP Server
 
-[![radare2](https://img.shields.io/badge/radare2-6.2.4-green)](https://github.com/radareorg/radare2)
+[![radare2](https://img.shields.io/badge/radare2-ABI%20158%2B-green)](https://github.com/radareorg/radare2)
 
 <img width="400" alt="r2mcp logo" src="./r2mcp.png" />
 
@@ -21,6 +21,8 @@ This implementation provides:
 - 🛠️ Optional raw access to run r2 commands or r2js scripts
 
 ## Installation
+
+Native builds require radare2 ABI 158 or newer with the explicit ordinary/tag type namespace API (`RTypeNamespace`, `RAnalBaseType.space` and the three-argument `r_anal_get_base_type`) and `r_core_anal_function_set_signature`. Make and Meson compile/link checks qualify the selected SDK; package version or ABI number alone is insufficient. Rebuild both the standalone server and core plugin against matching headers/libraries, and run with those matching libraries and plugins.
 
 <img width="400" alt="Screenshot_2025-03-22_at_5 34 47_PM" src="https://github.com/user-attachments/assets/5322c3fc-fc07-4770-96a3-5a6d82d439c2" />
 <img width="400" alt="Screenshot_2025-03-22_at_5 36 17_PM" src="https://github.com/user-attachments/assets/132a1de0-6978-4202-8dce-aa3d60551b9a" />
@@ -118,10 +120,7 @@ r2mcp -H 8765 -A
 The same token setting can be supplied with `R2MCP_AUTH_TOKEN`; set it to
 `random` to generate one.
 
-`-X` requires radare2 ABI 91 or newer because older radare2 headers do not
-expose the HTTP request header API. With older ABIs, `-H` still works as a
-single shared HTTP server, but `-X` is ignored. Bearer authentication also
-requires this header API.
+HTTP request headers, `-X` multiplexing and bearer authentication are supported by the required native SDK; older-ABI HTTP fallbacks are not supported.
 
 ### r2 Core Plugin Mode
 
@@ -179,7 +178,7 @@ Projects that require profile-created original-backed views need an explicit pre
 
 `apply_borland_profiles` is an explicit ordinary native operation with no arguments. It runs the host's existing `a:borland` qualified executable profiles and helper contracts without running general `analyze`, preparing analysis implicitly or changing its cached level. Every call reapplies qualification, including after restore or an earlier general analysis. The full native JSON2 envelope preserves qualification counts, refusal output and diagnostics; successful command execution does not mean every fact qualified. Conflicting manual/current state is preserved, not erased to force a count. General `analyze` remains separate: its entry/function/variable recovery can create state that a later profile application legitimately refuses. Missing native operations and failed/empty responses are tool errors.
 
-Native analysis reads are explicit and target-qualified. `show_function_details` requires `address` and returns `{address, functions}`, with `functions` taken from canonical targeted `afij`; it no longer uses the current seek implicitly. `get_binary_metadata` requires an exact `key` and returns its native `{key, value}` strings from the current binary plugin's Sdb. There is no database dump, integer guessing or fallback database. Missing keys/providers are errors. `get_comment` requires `address` and returns `{address, comment}`, where `null` means no native comment. `get_data_type` requires a native base-type `name` and reports its actual kind, API-provided `size_bits`, definition string when present, members with native offsets/bit sizes/array counts, or enum names/values. A zero native size/count remains zero; these reads do not parse C, infer layouts or create missing definitions.
+Native analysis reads are explicit and target-qualified. `show_function_details` requires `address` and returns `{address, functions}`, with `functions` taken from canonical targeted `afij`; it no longer uses the current seek implicitly. `get_binary_metadata` requires an exact `key` and returns its native `{key, value}` strings from the current binary plugin's Sdb. There is no database dump, integer guessing or fallback database. Missing keys/providers are errors. `get_comment` requires `address` and returns `{address, comment}`, where `null` means no native comment. `get_data_type` requires both a raw native base-type `name` and an explicit `namespace`: exactly `ordinary` (typedefs and ordinary named types) or `tag` (the shared struct/union/enum tag namespace). For example, `{ "name": "Alias", "namespace": "tag" }` reads the tag named `Alias`, not an ordinary typedef of the same name. Do not include a C `struct`/`union`/`enum` prefix in `name`. The result includes its native `name`, selected `namespace`, actual kind, API-provided `size_bits`, definition string when present, members with native offsets/bit sizes/array counts, or enum names/values. Missing, empty or invalid namespaces and definitions absent from the selected namespace are errors; there is no default or lookup in the other namespace. A zero native size/count remains zero; these reads do not parse C, infer layouts or create missing definitions.
 
 `list_relocation_records` is a read-only local native NE/OMF query. It reads only the current format provider's cached Sdb provenance, without `irj`, relocation application, binary reparsing or implicit analysis. Unsupported providers and hosts without this provenance return tool errors. Optional `page_size` and `cursor` paginate the sole top-level `records` array by source record, not application site; use `pagination.nextCursor` from the previous response. With `-C both` or `-C structured`, the same object is available in `structuredContent`. Each record retains its `native_key`, native fields and nested `applications`, including zero-application records. Numeric native fields remain numbers, textual fields remain strings, and absent native scalar fields stay absent rather than becoming zero or resolved targets. Structural `frame`, `target` or `reference` objects can be empty for incomplete subrecords; an empty object provides no decoded reference evidence. `get_binary_metadata` remains a separate exact-key query.
 

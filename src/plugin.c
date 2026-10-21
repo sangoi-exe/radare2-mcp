@@ -176,12 +176,6 @@ static ServerState *r2mcp_state_new_from_config(RCore *core) {
 			R_LOG_ERROR ("Failed to generate r2mcp HTTP bearer token");
 		}
 	}
-#if !R2MCP_HAS_HTTP_HEADERS
-	if (R_STR_ISNOTEMPTY (ss->auth_token)) {
-		R_LOG_WARN ("r2mcp.auth requires radare2 ABI >= 91");
-		R_FREE (ss->auth_token);
-	}
-#endif
 	ss->sandbox = r2mcp_cfg_get_dup (core, "r2mcp.sandbox");
 	ss->sandbox_grain = r2mcp_cfg_get_dup (core, "r2mcp.sandbox.grain");
 	ss->logfile = r2mcp_cfg_get_dup (core, "r2mcp.logfile");
@@ -205,7 +199,6 @@ static ServerState *r2mcp_state_new_from_config(RCore *core) {
 		prompts_registry_init (ss);
 	}
 	if (r_config_get_b (core->config, "r2mcp.sessions")) {
-#if R2MCP_HAS_HTTP_HEADERS
 		int max = (int)r_config_get_i (core->config, "r2mcp.sessions.max");
 		int timeout = (int)r_config_get_i (core->config, "r2mcp.sessions.timeout");
 		if (max <= 0) {
@@ -215,9 +208,6 @@ static ServerState *r2mcp_state_new_from_config(RCore *core) {
 			timeout = 600;
 		}
 		ss->sessions = r2mcp_sessions_new (max, timeout);
-#else
-		R_LOG_WARN ("r2mcp.sessions requires radare2 ABI >= 91");
-#endif
 	}
 	return ss;
 }

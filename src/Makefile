@@ -59,12 +59,23 @@ LDFLAGS = $(R2_LDFLAGS)
 .PHONY: all clean check_deps help install uninstall user-install user-uninstall
 
 LIBTARGET=libcore_$(TARGET).$(R2_LIBEXT)
-all: check_deps $(TARGET) $(LIBTARGET)
+all: $(TARGET) $(LIBTARGET)
+
+$(BIN_OBJS) $(PLUGIN_OBJS) $(TARGET) $(LIBTARGET): | check_deps
 
 check_deps:
 	@echo "Checking dependencies..."
 	@which $(PKGCONFIG) > /dev/null || (echo "pkg-config not found. Please install it."; exit 1)
 	@$(PKGCONFIG) --exists r_core || (echo "radare2 development files not found."; exit 1)
+	@printf '%s\n' \
+		'#include "r2mcp.h"' \
+		'int main(void) {' \
+		' bool (*set_signature)(RCore *, ut64, const char *, char **) = r_core_anal_function_set_signature;' \
+		' RAnalBaseType *type = r_anal_get_base_type (0, "probe", R_TYPE_NAMESPACE_TAG);' \
+		' if (type) { type->space = R_TYPE_NAMESPACE_ORDINARY; }' \
+		' return set_signature (0, 0, "int probe(void)", 0);' \
+		'}' | $(CC) $(CFLAGS) -x c - -x none -o /dev/null $(LDFLAGS) || \
+		{ echo "radare2 SDK requires ABI >= 158, explicit type namespaces and r_core_anal_function_set_signature."; exit 1; }
 	@echo "✓ All dependencies are satisfied."
 
 $(TARGET): $(BIN_OBJS) $(INC)

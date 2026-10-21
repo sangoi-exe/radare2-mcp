@@ -89,7 +89,6 @@ static bool r2mcp_http_bearer_authorized(const ServerState *ss, RSocketHTTPReque
 	if (!ss || R_STR_ISEMPTY (ss->auth_token)) {
 		return true;
 	}
-#if R2MCP_HAS_HTTP_HEADERS
 	const char *auth = r_socket_http_header (rs, "Authorization");
 	if (R_STR_ISEMPTY (auth) || r_str_ncasecmp (auth, "Bearer ", 7)) {
 		return false;
@@ -98,9 +97,6 @@ static bool r2mcp_http_bearer_authorized(const ServerState *ss, RSocketHTTPReque
 	bool ok = token && !strcmp (token, ss->auth_token);
 	free (token);
 	return ok;
-#else
-	return false;
-#endif
 }
 
 static bool is_valid_json_response(const char *str) {
@@ -369,12 +365,7 @@ char *r2mcp_cmd_file(ServerState *ss, const char *file) {
 	r2mcp_log_reset (ss);
 	R_CRITICAL_ENTER (core);
 	bool ok = false;
-#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 103
 	char *res = r_core_cmd_file_str (core, file, &ok);
-#else
-	ok = r_core_cmd_file (core, file);
-	char *res = strdup (ok? "script ok": "script fail");
-#endif
 	R_CRITICAL_LEAVE (core);
 	char *err = r2mcp_log_drain (ss);
 	if (!res) {
@@ -879,7 +870,6 @@ bool r2mcp_eventloop_http(ServerState *ss, const char *address_port) {
 		 * without that header fall back to the default state. */
 		RadareState *prev_rstate = ss->rstate;
 		R2McpSession *sess = NULL;
-#if R2MCP_HAS_HTTP_HEADERS
 		if (ss->sessions) {
 			const char *sid = r_socket_http_header (rs, "X-Session-ID");
 			if (R_STR_ISNOTEMPTY (sid)) {
@@ -889,7 +879,6 @@ bool r2mcp_eventloop_http(ServerState *ss, const char *address_port) {
 				}
 			}
 		}
-#endif
 		if (!strcmp (rs->method, "POST")) {
 			const char *body = rs->data? (const char *)rs->data: "";
 			char *response = build_mcp_response (ss, body);

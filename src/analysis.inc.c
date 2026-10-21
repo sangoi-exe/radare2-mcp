@@ -105,15 +105,27 @@ static char *tool_get_data_type(ServerState *ss, RJson *tool_args) {
 	if (!validate_required_string_param (tool_args, "name", &name) || R_STR_ISEMPTY (name)) {
 		return jsonrpc_error_missing_param ("name");
 	}
+	const char *namespace;
+	if (!validate_required_string_param (tool_args, "namespace", &namespace) || R_STR_ISEMPTY (namespace)) {
+		return jsonrpc_error_missing_param ("namespace");
+	}
+	RTypeNamespace space;
+	if (!strcmp (namespace, "ordinary")) {
+		space = R_TYPE_NAMESPACE_ORDINARY;
+	} else if (!strcmp (namespace, "tag")) {
+		space = R_TYPE_NAMESPACE_TAG;
+	} else {
+		return jsonrpc_error_response (-32602, "Invalid parameter 'namespace': expected ordinary or tag", NULL, NULL);
+	}
 	RCore *core = ss->rstate->core;
 	if (ss->rstate->http_mode || !core) {
 		return jsonrpc_tooltext_error_response ("Named types require a local native analysis core.");
 	}
 	R_CRITICAL_ENTER (core);
-	RAnalBaseType *type = r_anal_get_base_type (core->anal, name);
+	RAnalBaseType *type = r_anal_get_base_type (core->anal, name, space);
 	R_CRITICAL_LEAVE (core);
 	if (!type) {
-		return jsonrpc_tooltext_error_response ("Native named base type is absent or unreadable.");
+		return jsonrpc_tooltext_error_response ("Native named base type is absent or unreadable in the requested namespace.");
 	}
 	const char *kind;
 	switch (type->kind) {
@@ -129,6 +141,7 @@ static char *tool_get_data_type(ServerState *ss, RJson *tool_args) {
 	PJ *pj = pj_new ();
 	pj_o (pj);
 	pj_ks (pj, "name", type->name);
+	pj_ks (pj, "namespace", namespace);
 	pj_ks (pj, "kind", kind);
 	pj_kn (pj, "size_bits", type->size);
 	if (type->type) {

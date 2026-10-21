@@ -10,15 +10,8 @@
 #define R2MCP_VERSION "1.9.0"
 #endif
 
-/* r_socket_http_header () and generic HTTP request headers are available from
- * radare2 ABI 91. Older ABIs can still serve HTTP, but cannot route requests
- * by X-Session-ID. */
-#ifndef R2MCP_HAS_HTTP_HEADERS
-#if defined(R2_ABIVERSION) && R2_ABIVERSION >= 91
-#define R2MCP_HAS_HTTP_HEADERS 1
-#else
-#define R2MCP_HAS_HTTP_HEADERS 0
-#endif
+#if !defined(R2_ABIVERSION) || R2_ABIVERSION < 158
+#error r2mcp requires radare2 ABI 158 or newer with the explicit type namespace API
 #endif
 
 /* Pagination limits for tool responses */

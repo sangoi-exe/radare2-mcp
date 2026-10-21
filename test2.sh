@@ -133,6 +133,7 @@ build_cases() {
 			elif $name == "query" then "main"
 			elif $name == "type" and $tool == "search" then "string"
 			elif $name == "name" and $tool == "use_decompiler" then "pdc"
+			elif $name == "namespace" and $tool == "get_data_type" then "ordinary"
 			elif $name == "name" then "fuzz_name"
 			elif $name == "new_name" then "fuzz_name_new"
 			elif $name == "protection" then "r-x"
@@ -1554,7 +1555,7 @@ run_native_analysis_read_regressions() {
 		map(select(.name == "show_function_details" or .name == "get_comment")) as $addressed
 		| ($addressed | length) == 2 and all($addressed[]; .inputSchema.required == ["address"])
 		and any(.[]; .name == "get_binary_metadata" and .inputSchema.required == ["key"])
-		and any(.[]; .name == "get_data_type" and .inputSchema.required == ["name"])
+		and any(.[]; .name == "get_data_type" and .inputSchema.required == ["name", "namespace"] and .inputSchema.properties.namespace.enum == ["ordinary", "tag"])
 	' "$catalog" >/dev/null || fail "targeted native read schemas are incomplete"
 	: > "$req"
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
@@ -1563,6 +1564,7 @@ run_native_analysis_read_regressions() {
 	# Seed test-only native definitions after normal binary type initialization.
 	append_tool_call "$req" 21 run_command '{"command":"\"td struct MCPReadRecord { uint16_t values[3]; uint8_t tag; };\""}'
 	append_tool_call "$req" 22 run_command '{"command":"\"td enum MCPReadEnum { ZERO=0, HIGH=7 };\""}'
+	append_tool_call "$req" 23 run_command '{"command":"\"td typedef uint32_t MCPReadRecord;\""}'
 	append_tool_call "$req" 3 show_function_details '{}'
 	append_tool_call "$req" 4 get_comment '{}'
 	append_tool_call "$req" 5 get_binary_metadata '{}'
@@ -1571,14 +1573,23 @@ run_native_analysis_read_regressions() {
 	append_tool_call "$req" 8 set_comment '{"address":"entry0","message":"MCP_NATIVE_COMMENT"}'
 	append_tool_call "$req" 9 get_comment '{"address":"entry0"}'
 	append_tool_call "$req" 10 get_binary_metadata '{"key":"r2mcp.missing.exact.key"}'
-	append_tool_call "$req" 11 get_data_type '{"name":"r2mcp_missing_native_type"}'
-	append_tool_call "$req" 12 get_data_type '{"name":"uint16_t[3]"}'
-	append_tool_call "$req" 13 get_data_type '{"name":"uint16_t"}'
-	append_tool_call "$req" 14 get_data_type '{"name":"MCPReadRecord"}'
-	append_tool_call "$req" 15 get_data_type '{"name":"MCPReadEnum"}'
+	append_tool_call "$req" 11 get_data_type '{"name":"r2mcp_missing_native_type","namespace":"ordinary"}'
+	append_tool_call "$req" 12 get_data_type '{"name":"uint16_t[3]","namespace":"ordinary"}'
+	append_tool_call "$req" 13 get_data_type '{"name":"uint16_t","namespace":"ordinary"}'
+	append_tool_call "$req" 14 get_data_type '{"name":"MCPReadRecord","namespace":"tag"}'
+	append_tool_call "$req" 15 get_data_type '{"name":"MCPReadEnum","namespace":"tag"}'
 	append_tool_call "$req" 16 analyze '{"level":0,"timeout_seconds":1}'
 	append_tool_call "$req" 17 show_function_details '{"address":"entry0"}'
 	append_tool_call "$req" 18 show_function_details '{"address":"0x7fff0000"}'
+	append_tool_call "$req" 19 get_data_type '{"name":"MCPReadRecord","namespace":"ordinary"}'
+	append_tool_call "$req" 20 get_data_type '{"name":"uint16_t"}'
+	append_tool_call "$req" 24 get_data_type '{"name":"uint16_t","namespace":""}'
+	append_tool_call "$req" 25 get_data_type '{"name":"uint16_t","namespace":"struct"}'
+	append_tool_call "$req" 26 get_data_type '{"name":"uint16_t","namespace":"Ordinary"}'
+	append_tool_call "$req" 27 get_data_type '{"name":"uint16_t","namespace":1}'
+	append_tool_call "$req" 28 get_data_type '{"name":"uint16_t","namespace":"tag"}'
+	append_tool_call "$req" 29 get_data_type '{"name":"MCPReadEnum","namespace":"ordinary"}'
+	append_tool_call "$req" 30 get_data_type '{"name":"struct MCPReadRecord","namespace":"tag"}'
 	run_session "$req" "$resp" -n -N -r -C both -s "$TEST_DIR" -c 'e anal.depth=1'
 	assert_error_contains_param "$(response_by_id "$resp" 3)" address "targeted function address"
 	assert_error_contains_param "$(response_by_id "$resp" 4)" address "comment address"
@@ -1587,12 +1598,19 @@ run_native_analysis_read_regressions() {
 	printf '%s\n' "$(response_by_id "$resp" 7)" | jq -e '.result.structuredContent.comment == null' >/dev/null || fail "absent native comment must be null"
 	printf '%s\n' "$(response_by_id "$resp" 9)" | jq -e '.result.structuredContent.comment | contains("MCP_NATIVE_COMMENT")' >/dev/null || fail "native comment content was not returned"
 	local id
-	for id in 10 11 12 18; do
-		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.isError == true' >/dev/null || fail "missing native data must fail visibly (#$id)"
+	for id in 20 24 25 26 27; do
+		assert_error_contains_param "$(response_by_id "$resp" "$id")" namespace "native type namespace (#$id)"
 	done
-	printf '%s\n' "$(response_by_id "$resp" 13)" | jq -e '.result.structuredContent | .name == "uint16_t" and .kind == "atomic" and .size_bits == 16' >/dev/null || fail "native atomic definition differs"
-	printf '%s\n' "$(response_by_id "$resp" 14)" | jq -e '.result.structuredContent | .kind == "struct" and .members[0].name == "values" and .members[0].type == "uint16_t" and .members[0].count == 3' >/dev/null || fail "native member/count definition differs"
-	printf '%s\n' "$(response_by_id "$resp" 15)" | jq -e '.result.structuredContent | .kind == "enum" and (.cases | map({key:.name,value:.value}) | from_entries) == {ZERO:0,HIGH:7}' >/dev/null || fail "native enum definition differs"
+	for id in 10 11 12 18 28 29 30; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.jsonrpc == "2.0" and .result.isError == true and (.result.content[0].text | length) > 0' >/dev/null || fail "missing native data must fail visibly (#$id)"
+	done
+	for id in 13 14 15 19; do
+		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.jsonrpc == "2.0" and .result.isError != true and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null || fail "native type text and structured envelopes differ (#$id)"
+	done
+	printf '%s\n' "$(response_by_id "$resp" 13)" | jq -e '.result.structuredContent | .name == "uint16_t" and .namespace == "ordinary" and .kind == "atomic" and .size_bits == 16' >/dev/null || fail "native atomic definition differs"
+	printf '%s\n' "$(response_by_id "$resp" 14)" | jq -e '.result.structuredContent | .name == "MCPReadRecord" and .namespace == "tag" and .kind == "struct" and .members[0].name == "values" and .members[0].type == "uint16_t" and .members[0].count == 3' >/dev/null || fail "native member/count definition differs"
+	printf '%s\n' "$(response_by_id "$resp" 15)" | jq -e '.result.structuredContent | .name == "MCPReadEnum" and .namespace == "tag" and .kind == "enum" and (.cases | map({key:.name,value:.value}) | from_entries) == {ZERO:0,HIGH:7}' >/dev/null || fail "native enum definition differs"
+	printf '%s\n' "$(response_by_id "$resp" 19)" | jq -e '.result.structuredContent | .name == "MCPReadRecord" and .namespace == "ordinary" and .kind == "typedef" and .type == "uint32_t" and .size_bits == 0' >/dev/null || fail "ordinary typedef identity or native zero size was changed"
 	printf '%s\n' "$(response_by_id "$resp" 17)" | jq -e '.result.structuredContent | (.functions | length) > 0 and .functions[0].addr == .address' >/dev/null || fail "targeted afij details were not returned"
 }
 

@@ -6,6 +6,7 @@ version : '1.9.0',
 )
 
 cc = meson.get_compiler('c')
+fs = import('fs')
 
 r_core_dep = dependency('r_core', method: 'pkg-config', required: false)
 
@@ -32,7 +33,16 @@ if not r_core_dep.found()
       incdirs = []
       if get_option('r2_prefix') != ''
         p = get_option('r2_prefix')
-        incdirs += [join_paths(p, 'include', 'libr'), join_paths(p, 'include')]
+        has_core_header = false
+        foreach incdir : [join_paths(p, 'include', 'libr'), join_paths(p, 'include')]
+          if fs.is_dir(incdir)
+            incdirs += [incdir]
+            has_core_header = has_core_header or fs.is_file(join_paths(incdir, 'r_core.h'))
+          endif
+        endforeach
+        if not has_core_header
+          error('r_core.h not found in supported include directories under prefix ' + p)
+        endif
       endif
       rcore_inc = include_directories(incdirs)
       r_core_dep = declare_dependency(dependencies: [rcore_lib], include_directories: rcore_inc)
@@ -56,20 +66,32 @@ if not r_core_dep.found()
         join_paths(p, 'radare2', 'lib64'),
         join_paths(p, 'mingw64', 'lib'),
       ]
-      incdirs = [
+      include_candidates = [
         join_paths(p, 'include'),
         join_paths(p, 'radare2', 'include'),
         join_paths(p, 'include', 'radare2'),
+        join_paths(p, 'include', 'libr'),
       ]
+      incdirs = []
+      has_core_header = false
+      foreach incdir : include_candidates
+        if fs.is_dir(incdir)
+          incdirs += [incdir]
+          has_core_header = has_core_header or fs.is_file(join_paths(incdir, 'r_core.h'))
+        endif
+      endforeach
+      if not has_core_header
+        error('r_core.h not found in supported include directories under prefix ' + p)
+      endif
       extra_libdirs = libdirs + [join_paths(p, 'bin')]
       candidate_names = ['r_core', 'r_core-6', 'r_core6', 'r_core64', 'libr_core']
       foreach name : candidate_names
         rcore_lib = cc.find_library(name, dirs: extra_libdirs, required: false)
         if rcore_lib.found()
-          rcore_inc = include_directories(incdirs + [join_paths(p, 'include', 'libr')])
+          rcore_inc = include_directories(incdirs)
           r_core_dep = declare_dependency(dependencies: [rcore_lib], include_directories: rcore_inc)
           r2_libdirs = extra_libdirs
-          r2_incdirs = incdirs + [join_paths(p, 'include', 'libr')]
+          r2_incdirs = incdirs
           found = true
           break
         endif
@@ -92,6 +114,7 @@ r_deps = {
   'r_socket': ['r_socket', 'libr_socket'],
   'r_io': ['r_io', 'libr_io'],
   'r_anal': ['r_anal', 'libr_anal'],
+  'r_bin': ['r_bin', 'libr_bin'],
   'r_flag': ['r_flag', 'libr_flag']
 }
 
@@ -160,10 +183,26 @@ else
   c_args = ['-D_GNU_SOURCE', '-D_POSIX_C_SOURCE=200809L']
 endif
 
+r2_native_deps = [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep, r_io_dep, r_anal_dep, r_bin_dep, r_flag_dep]
+if not cc.links('''
+#include <r_core.h>
+#if !defined(R2_ABIVERSION) || R2_ABIVERSION < 158
+#error r2mcp requires radare2 ABI 158 or newer
+#endif
+int main(void) {
+  bool (*set_signature)(RCore *, ut64, const char *, char **) = r_core_anal_function_set_signature;
+  RAnalBaseType *type = r_anal_get_base_type (0, "probe", R_TYPE_NAMESPACE_TAG);
+  if (type) { type->space = R_TYPE_NAMESPACE_ORDINARY; }
+  return set_signature (0, 0, "int probe(void)", 0);
+}
+''', dependencies: r2_native_deps, args: c_args + link_args, name: 'radare2 ABI 158 explicit type namespace and Core signature APIs')
+  error('radare2 SDK requires ABI >= 158, explicit type namespaces and r_core_anal_function_set_signature')
+endif
+
 executable(
   'r2mcp',
   srcs,
-  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep, r_io_dep, r_anal_dep, r_flag_dep],
+  dependencies: r2_native_deps,
   c_args: c_args,
   link_args: link_args,
   install: true,
@@ -172,7 +211,7 @@ executable(
 plugin_lib = shared_library(
   'core_r2mcp',
   plugin_srcs,
-  dependencies: [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep, r_io_dep, r_anal_dep, r_flag_dep],
+  dependencies: r2_native_deps,
   c_args: c_args,
   link_args: link_args,
   install: false,
