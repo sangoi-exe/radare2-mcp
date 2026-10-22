@@ -1513,6 +1513,8 @@ run_native_signature_regressions() {
 	append_tool_call "$req" 13 get_function_prototype '{"address":"0x1002"}'
 	append_tool_call "$req" 14 set_function_prototype '{"address":"0x1002","prototype":"char taken(void)"}'
 	append_tool_call "$req" 15 get_function_prototype '{"address":"0x1002"}'
+	append_tool_call "$req" 23 set_function_prototype '{"address":"0x1002","prototype":"int grid(int (__attribute__((r2_cc(\"__cdecl16far\"))) *callback)(int))"}'
+	append_tool_call "$req" 24 get_function_prototype '{"address":"0x1002"}'
 	append_tool_call "$req" 16 get_function_prototype '{"address":"0x1010"}'
 	append_tool_call "$req" 17 set_function_prototype '{"address":"0x1002","prototype":"int grid()"}'
 	append_tool_call "$req" 18 get_function_prototype '{"address":"0x1002"}'
@@ -1522,7 +1524,7 @@ run_native_signature_regressions() {
 	append_tool_call "$req" 22 get_current_address '{}'
 	run_session "$req" "$resp" -n -N -r -s "$TEST_DIR"
 	local id
-	for id in 5 6 8 10 17 19; do
+	for id in 5 6 8 10 17 19 23; do
 		printf '%s\n' "$(response_by_id "$resp" "$id")" | jq -e '.result.content[0].text == "ok" and .result.isError != true' >/dev/null || fail "native signature application failed (#$id)"
 	done
 	printf '%s\n' "$(response_by_id "$resp" 2)" | jq -e '.error != null' >/dev/null || fail "signature application without an open core must fail"
@@ -1537,6 +1539,7 @@ run_native_signature_regressions() {
 	printf '%s\n' "$(response_by_id "$resp" 16)" | jq -e '.result.content[0].text | contains("long taken (char saved)")' >/dev/null || fail "duplicate name refusal changed the other function"
 	printf '%s\n' "$(response_by_id "$resp" 18)" | jq -e '.result.content[0].text | contains("int grid ()")' >/dev/null || fail "unspecified parameter list was not preserved"
 	printf '%s\n' "$(response_by_id "$resp" 20)" | jq -e '.result.content[0].text | contains("int grid (void)")' >/dev/null || fail "fixed empty parameter list was not preserved"
+	printf '%s\n' "$(response_by_id "$resp" 24)" | jq -e '.result.content[0].text | contains("__attribute__((r2_cc(\"__cdecl16far\"))) *callback)(int)")' >/dev/null || fail "native callback signature lost its intrinsic supplied convention"
 	printf '%s\n' "$(response_by_id "$resp" 22)" | jq -e '.result.content[0].text == "0x1010\ntaken\n"' >/dev/null || fail "typed signature application changed the current seek"
 	: > "$req"
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'

@@ -14,7 +14,7 @@ itself, `-H` runs a single
 shared `RadareState` for every request, like before. To enable per-client
 state isolation, add `-X`.
 
-Native builds require radare2 ABI 158 or newer with the explicit ordinary/tag type namespace API and `r_core_anal_function_set_signature`, as qualified by the Make and Meson SDK checks. The supported SDK provides HTTP request headers, `-X`/`R2MCP_SESSIONS` multiplexing and bearer authentication; older-ABI HTTP fallbacks are not supported.
+Native builds require radare2 ABI 159 or newer with the explicit ordinary/tag type namespace API and `r_core_anal_function_set_signature`, as qualified by the Make and Meson SDK checks. Rebuild against matching headers and libraries; a package or ABI label alone does not qualify an SDK. The supported SDK provides HTTP request headers, `-X`/`R2MCP_SESSIONS` multiplexing and bearer authentication; older-ABI HTTP fallbacks are not supported.
 
 ```sh
 # Single shared state (legacy behavior)

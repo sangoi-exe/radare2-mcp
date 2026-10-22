@@ -10,8 +10,8 @@
 #define R2MCP_VERSION "1.9.0"
 #endif
 
-#if !defined(R2_ABIVERSION) || R2_ABIVERSION < 158
-#error r2mcp requires radare2 ABI 158 or newer with the explicit type namespace API
+#if !defined(R2_ABIVERSION) || R2_ABIVERSION < 159
+#error r2mcp requires radare2 ABI 159 or newer with the explicit type namespace API
 #endif
 
 /* Pagination limits for tool responses */

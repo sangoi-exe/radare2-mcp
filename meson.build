@@ -186,8 +186,8 @@ endif
 r2_native_deps = [r_core_dep, r_socket_dep, r_util_dep, r_cons_dep, r_config_dep, r_io_dep, r_anal_dep, r_bin_dep, r_flag_dep]
 if not cc.links('''
 #include <r_core.h>
-#if !defined(R2_ABIVERSION) || R2_ABIVERSION < 158
-#error r2mcp requires radare2 ABI 158 or newer
+#if !defined(R2_ABIVERSION) || R2_ABIVERSION < 159
+#error r2mcp requires radare2 ABI 159 or newer
 #endif
 int main(void) {
   bool (*set_signature)(RCore *, ut64, const char *, char **) = r_core_anal_function_set_signature;
@@ -195,8 +195,8 @@ int main(void) {
   if (type) { type->space = R_TYPE_NAMESPACE_ORDINARY; }
   return set_signature (0, 0, "int probe(void)", 0);
 }
-''', dependencies: r2_native_deps, args: c_args + link_args, name: 'radare2 ABI 158 explicit type namespace and Core signature APIs')
-  error('radare2 SDK requires ABI >= 158, explicit type namespaces and r_core_anal_function_set_signature')
+''', dependencies: r2_native_deps, args: c_args + link_args, name: 'radare2 ABI 159 explicit type namespace and Core signature APIs')
+  error('radare2 SDK requires ABI >= 159, explicit type namespaces and r_core_anal_function_set_signature')
 endif
 
 executable(

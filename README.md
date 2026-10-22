@@ -1,6 +1,6 @@
 # Radare2 MCP Server
 
-[![radare2](https://img.shields.io/badge/radare2-ABI%20158%2B-green)](https://github.com/radareorg/radare2)
+[![radare2](https://img.shields.io/badge/radare2-ABI%20159%2B-green)](https://github.com/radareorg/radare2)
 
 <img width="400" alt="r2mcp logo" src="./r2mcp.png" />
 
@@ -22,7 +22,7 @@ This implementation provides:
 
 ## Installation
 
-Native builds require radare2 ABI 158 or newer with the explicit ordinary/tag type namespace API (`RTypeNamespace`, `RAnalBaseType.space` and the three-argument `r_anal_get_base_type`) and `r_core_anal_function_set_signature`. Make and Meson compile/link checks qualify the selected SDK; package version or ABI number alone is insufficient. Rebuild both the standalone server and core plugin against matching headers/libraries, and run with those matching libraries and plugins.
+Native builds require radare2 ABI 159 or newer with the explicit ordinary/tag type namespace API (`RTypeNamespace`, `RAnalBaseType.space` and the three-argument `r_anal_get_base_type`) and `r_core_anal_function_set_signature`. Make and Meson compile/link checks qualify the selected SDK; package version or ABI number alone is insufficient. Rebuild both the standalone server and core plugin against matching headers/libraries, and run with those matching libraries and plugins.
 
 <img width="400" alt="Screenshot_2025-03-22_at_5 34 47_PM" src="https://github.com/user-attachments/assets/5322c3fc-fc07-4770-96a3-5a6d82d439c2" />
 <img width="400" alt="Screenshot_2025-03-22_at_5 36 17_PM" src="https://github.com/user-attachments/assets/132a1de0-6978-4202-8dce-aa3d60551b9a" />

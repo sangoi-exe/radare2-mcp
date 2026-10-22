@@ -75,7 +75,7 @@ check_deps:
 		' if (type) { type->space = R_TYPE_NAMESPACE_ORDINARY; }' \
 		' return set_signature (0, 0, "int probe(void)", 0);' \
 		'}' | $(CC) $(CFLAGS) -x c - -x none -o /dev/null $(LDFLAGS) || \
-		{ echo "radare2 SDK requires ABI >= 158, explicit type namespaces and r_core_anal_function_set_signature."; exit 1; }
+		{ echo "radare2 SDK requires ABI >= 159, explicit type namespaces and r_core_anal_function_set_signature."; exit 1; }
 	@echo "✓ All dependencies are satisfied."
 
 $(TARGET): $(BIN_OBJS) $(INC)
