@@ -12,6 +12,8 @@ The native server links radare2 RCore and owns MCP stdio transport, tools and RC
 
 Use the root `Makefile`, `src/Makefile` and test entry points below as the build/test owners. `src/main.c` owns startup plugin/rc loading and decompiler selection, `src/tools.c` owns tool registration and decompiler dispatch, `src/r2mcp.c` owns RCore creation/destruction and stdio processing, and `src/r2api.inc.c` owns native file loading. Build and launch against matching host libraries, bridge plugins and language files; use the existing startup and registered-decompiler selection paths. A checkout or source inspection does not prove a working runtime, preservation of unsaved analysis across file switches, or saved-project roundtrips; validate those through the actual server and host persistence path.
 
+`src/analysis.inc.c` consumes the host's exact base-type getter. `get_data_type` requires a raw `name` and an explicit `namespace` (`ordinary` or `tag`); it does not parse a C tag prefix, infer layout or search another namespace. The catalog in `src/tools.c` and production-path controls in `test2.sh` follow that contract. Make and Meson require ABI158 plus the actual namespace and Core signature APIs; equal package/ABI labels alone do not qualify an SDK.
+
 ## Build & Test
 
 - `make -j` — fast incremental build (from repo root)
