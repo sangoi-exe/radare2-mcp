@@ -14,9 +14,7 @@ itself, `-H` runs a single
 shared `RadareState` for every request, like before. To enable per-client
 state isolation, add `-X`.
 
-`-X` requires radare2 ABI 91 or newer. Older radare2 headers do not expose the
-HTTP request header API needed to read `X-Session-ID`, so builds against older
-ABIs keep `-H` working but ignore `-X`/`R2MCP_SESSIONS`.
+Native builds require radare2 ABI 158 or newer with the explicit ordinary/tag type namespace API and `r_core_anal_function_set_signature`, as qualified by the Make and Meson SDK checks. The supported SDK provides HTTP request headers, `-X`/`R2MCP_SESSIONS` multiplexing and bearer authentication; older-ABI HTTP fallbacks are not supported.
 
 ```sh
 # Single shared state (legacy behavior)
