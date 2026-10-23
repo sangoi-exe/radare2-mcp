@@ -1444,13 +1444,13 @@ run_native_decompile_status_regressions() {
 	append_request "$req" 1 initialize '{"capabilities":{},"clientInfo":{"name":"testsuite","version":"1"}}'
 	append_notification "$req" notifications/initialized '{}'
 	append_tool_call "$req" 2 open_file "$(jq -cn --arg file "$original" '{file_path:$file}')"
-	append_tool_call "$req" 3 decompile_function '{"address":"0x105e2"}'
-	append_tool_call "$req" 4 decompile_function '{"address":"0x105e2","language":"x86:LE:16:Protected Mode"}'
+	append_tool_call "$req" 3 decompile_function '{"address":"0x1000005e2"}'
+	append_tool_call "$req" 4 decompile_function '{"address":"0x1000005e2","language":"x86:LE:16:Protected Mode"}'
 	append_tool_call "$req" 5 apply_borland_profiles '{}'
-	append_tool_call "$req" 6 decompile_function '{"address":"0x1033a","page_size":4}'
-	append_tool_call "$req" 7 decompile_function '{"address":"0x1033a","language":"x86:LE:16:Protected Mode","page_size":4}'
-	append_tool_call "$req" 8 decompile_function '{"address":"0x1033a","page_size":10000}'
-	append_tool_call "$req" 9 get_decompiler_context '{"address":"0x1033a"}'
+	append_tool_call "$req" 6 decompile_function '{"address":"0x10000033a","page_size":4}'
+	append_tool_call "$req" 7 decompile_function '{"address":"0x10000033a","language":"x86:LE:16:Protected Mode","page_size":4}'
+	append_tool_call "$req" 8 decompile_function '{"address":"0x10000033a","page_size":10000}'
+	append_tool_call "$req" 9 get_decompiler_context '{"address":"0x10000033a"}'
 	append_tool_call "$req" 10 close_file '{}'
 	run_session "$req" "$resp" -n -N -C both -s "$(dirname "$original")" -c "L $plugin" -c "e r2ghidra.sleighhome=$languages" -c 'e r2ghidra.timeout=0' -d pd:g
 	local id
